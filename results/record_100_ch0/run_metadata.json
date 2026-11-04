@@ -1,0 +1,138 @@
+{
+  "generated_at_utc": "2026-11-04T04:04:51.941240+00:00",
+  "framework": "ECG-Integrity-Lab",
+  "version": "0.1.0",
+  "environment": {
+    "python_version": "3.12.10",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "numpy_version": "2.5.4",
+    "scipy_version": "1.18.1",
+    "pandas_version": "3.1.0",
+    "matplotlib_version": "3.11.2",
+    "wfdb_version": "4.3.1"
+  },
+  "software_verification_phantom": {
+    "pulse_count": 10,
+    "expected_amplitude_mv": 1.0,
+    "observed_amplitude_mv": 1.0,
+    "amplitude_error_percent": 0.0,
+    "expected_bpm": 60.0,
+    "observed_bpm": 60.0,
+    "rate_error_percent": 0.0
+  },
+  "record_qa_metadata": {
+    "n_channels": 2,
+    "selected_channel": 0,
+    "channel_name": "MLII",
+    "fs_hz": 360.0,
+    "expected_fs_hz": 360.0,
+    "dt_seconds": 0.00277778,
+    "dt_ms": 2.777778,
+    "physical_unit": "mV",
+    "n_samples": 108000,
+    "duration_seconds": 300.0,
+    "non_finite_count": 0,
+    "min_amplitude_mv": -0.695,
+    "max_amplitude_mv": 1.245,
+    "mean_amplitude_mv": -0.321025,
+    "std_amplitude_mv": 0.175621,
+    "adc_gain_counts_per_mv": 200.0,
+    "adc_baseline_counts": 1024,
+    "adc_resolution_bits": 11,
+    "reference_beat_count": 371,
+    "qa_checks_passed": true,
+    "record_id": "100",
+    "database": "mitdb",
+    "total_record_samples": 650000,
+    "all_annotations_in_window": 372,
+    "non_beat_annotations_excluded": 1,
+    "beat_symbol_distribution": {
+      "N": 367,
+      "A": 4
+    },
+    "header_comments": [
+      "69 M 1085 1629 x1",
+      "Aldomet, Inderal"
+    ]
+  },
+  "processing_parameters": {
+    "filter_type": "Butterworth bandpass (zero-phase second-order sections via sosfiltfilt)",
+    "filter_scope_warning": "5-20 Hz QRS-detection filter only; attenuates P/T waves and distorts ST morphology. Not for clinical or diagnostic ECG interpretation.",
+    "lowcut_hz": 5.0,
+    "highcut_hz": 20.0,
+    "filter_order": 4,
+    "integration_window_ms": 120.0,
+    "refractory_ms": 250.0,
+    "search_window_ms": 90.0,
+    "min_separation_ms": 250.0,
+    "threshold_alpha": 0.25,
+    "searchback_rr_factor": 1.66
+  },
+  "evaluation_protocol": {
+    "matching_algorithm": "Greedy closest-pair strict one-to-one beat matching",
+    "tolerance_ms": 150.0,
+    "tolerance_samples": 54,
+    "random_seed": 42,
+    "scenarios": [
+      {
+        "key": "baseline",
+        "scenario": "Baseline",
+        "condition": "Original signal",
+        "parameters": {
+          "perturbation": "none"
+        }
+      },
+      {
+        "key": "baseline_wander",
+        "scenario": "Baseline wander",
+        "condition": "0.20 mV, 0.25 Hz",
+        "parameters": {
+          "type": "sinusoidal_wander",
+          "amplitude_mv": 0.2,
+          "freq_hz": 0.25
+        }
+      },
+      {
+        "key": "mains_interference",
+        "scenario": "Mains interference",
+        "condition": "0.05 mV, 60 Hz",
+        "parameters": {
+          "type": "powerline_60hz",
+          "amplitude_mv": 0.05,
+          "freq_hz": 60.0
+        }
+      },
+      {
+        "key": "white_noise_20dB",
+        "scenario": "White noise (20 dB)",
+        "condition": "AWGN 20 dB SNR",
+        "parameters": {
+          "type": "awgn",
+          "snr_db": 20.0,
+          "seed": 42
+        }
+      },
+      {
+        "key": "white_noise_10dB",
+        "scenario": "White noise (10 dB)",
+        "condition": "AWGN 10 dB SNR",
+        "parameters": {
+          "type": "awgn",
+          "snr_db": 10.0,
+          "seed": 42
+        }
+      },
+      {
+        "key": "white_noise_5dB",
+        "scenario": "White noise (5 dB)",
+        "condition": "AWGN 5 dB SNR",
+        "parameters": {
+          "type": "awgn",
+          "snr_db": 5.0,
+          "seed": 42
+        }
+      }
+    ]
+  },
+  "output_directory": "C:\\Users\\enfoc\\Desktop\\ECG-Integrity-Lab\\results\\record_100_ch0"
+}

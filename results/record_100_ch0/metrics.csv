@@ -1,0 +1,7 @@
+record,channel,channel_name,duration_s,scenario_key,scenario,condition,n_ref,n_det,tp,fp,fn,sensitivity,ppv,f1_score,mae_ms,mean_signed_error_ms,std_error_ms,median_abs_error_ms,max_abs_error_ms,tolerance_ms
+100,0,MLII,300.0,baseline,Baseline,Original signal,371,371,371,0,0,1.0,1.0,1.0,1.168,1.168,1.4451,0.0,5.5556,150.0
+100,0,MLII,300.0,baseline_wander,Baseline wander,"0.20 mV, 0.25 Hz",371,371,371,0,0,1.0,1.0,1.0,1.2279,1.2279,1.453,0.0,5.5556,150.0
+100,0,MLII,300.0,mains_interference,Mains interference,"0.05 mV, 60 Hz",371,371,371,0,0,1.0,1.0,1.0,1.2579,1.198,1.5599,0.0,5.5556,150.0
+100,0,MLII,300.0,white_noise_20dB,White noise (20 dB),AWGN 20 dB SNR,371,371,371,0,0,1.0,1.0,1.0,1.2279,1.2129,1.5075,0.0,5.5556,150.0
+100,0,MLII,300.0,white_noise_10dB,White noise (10 dB),AWGN 10 dB SNR,371,371,371,0,0,1.0,1.0,1.0,1.5049,1.0707,1.8797,2.7778,5.5556,150.0
+100,0,MLII,300.0,white_noise_5dB,White noise (5 dB),AWGN 5 dB SNR,371,371,371,0,0,1.0,1.0,1.0,1.6996,0.9209,2.1977,2.7778,8.3333,150.0

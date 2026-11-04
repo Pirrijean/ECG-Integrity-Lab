@@ -1,0 +1,25 @@
+# Virtual environment
+.venv/
+venv/
+ENV/
+
+# Python cache & build artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+src/*.egg-info/
+build/
+dist/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Local PhysioNet raw signal cache (automatically downloaded via WFDB)
+data/raw/
+
+# OS / IDE files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
