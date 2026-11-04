@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 from ecg_integrity.benchmark import compare_detectors_on_scenarios, detect_qrs_wfdb_xqrs
 from ecg_integrity.dataset import (
@@ -13,9 +13,12 @@ from ecg_integrity.dataset import (
 )
 from ecg_integrity.detector import (
     QRSDetectionOutput,
+    QRSDetectionV2Output,
     QRSDetectorConfig,
+    QRSDetectorV2Config,
     detect_qrs,
     detect_qrs_pan_tompkins,
+    detect_qrs_pan_tompkins_v2,
     refine_peaks_parabolic,
 )
 from ecg_integrity.digital_phantom import evaluate_digital_phantom, generate_1mv_60bpm_phantom
@@ -48,9 +51,12 @@ __all__ = [
     "load_mitbih_record",
     "validate_ecg_metadata_and_signal",
     "QRSDetectorConfig",
+    "QRSDetectorV2Config",
     "QRSDetectionOutput",
+    "QRSDetectionV2Output",
     "detect_qrs",
     "detect_qrs_pan_tompkins",
+    "detect_qrs_pan_tompkins_v2",
     "refine_peaks_parabolic",
     "generate_1mv_60bpm_phantom",
     "evaluate_digital_phantom",

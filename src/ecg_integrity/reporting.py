@@ -609,39 +609,276 @@ def save_xqrs_benchmark_plot(
     output_path: str | Path,
     title: str = "Detector Benchmark: Custom Pan–Tompkins vs. WFDB XQRS",
 ) -> Path:
-    """Experiment 4 plot: Side-by-side F1-score and MAE_t comparison against WFDB XQRS."""
+    """Experiment 4 / v0.3.0 plot: Side-by-side F1-score and MAE_t comparison across 2 or 3 detectors."""
     out_file = Path(output_path)
     out_file.parent.mkdir(parents=True, exist_ok=True)
 
     scenarios = bench_df["scenario"].drop_duplicates().tolist()
+    detectors = bench_df["detector"].drop_duplicates().tolist()
+    n_det = len(detectors)
     x = np.arange(len(scenarios))
-    width = 0.35
+    width = 0.76 / max(1, n_det)
 
-    pt_sub = bench_df[bench_df["detector"] == "Pan-Tompkins (Custom)"].set_index("scenario").reindex(scenarios)
-    xq_sub = bench_df[bench_df["detector"] == "WFDB XQRS"].set_index("scenario").reindex(scenarios)
+    color_map = {
+        "Pan-Tompkins (Custom)": "#2563eb",
+        "Pan-Tompkins v1": "#64748b",
+        "Pan-Tompkins v2": "#16a34a",
+        "WFDB XQRS": "#0284c7",
+    }
+    fallback_colors = ["#2563eb", "#16a34a", "#0d9488", "#7c3aed"]
 
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(11.8, 7.2), sharex=True, constrained_layout=True)
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12.2, 7.6), sharex=True, constrained_layout=True)
 
-    ax1.bar(x - width / 2, pt_sub["f1_score"].to_numpy(dtype=float) * 100.0, width, label="Pan–Tompkins (Custom)", color="#2563eb")
-    ax1.bar(x + width / 2, xq_sub["f1_score"].to_numpy(dtype=float) * 100.0, width, label="WFDB XQRS", color="#0d9488")
+    for idx, det_name in enumerate(detectors):
+        offset = (idx - (n_det - 1) / 2.0) * width
+        sub = bench_df[bench_df["detector"] == det_name].set_index("scenario").reindex(scenarios)
+        c = color_map.get(det_name, fallback_colors[idx % len(fallback_colors)])
+        ax1.bar(x + offset, sub["f1_score"].to_numpy(dtype=float) * 100.0, width, label=det_name, color=c)
+        ax2.bar(x + offset, sub["mae_ms"].to_numpy(dtype=float), width, label=det_name, color=c)
+
     min_f1 = float(np.nanmin(bench_df["f1_score"].to_numpy(dtype=float) * 100.0))
-    ax1.set_ylim(max(0.0, min(90.0, min_f1 - 5.0)), 101.5)
+    ax1.set_ylim(max(0.0, min(95.0, min_f1 - 2.5)), 100.8)
     ax1.set_ylabel("F1-Score (%)")
     ax1.set_title(title, fontsize=11.5, fontweight="bold")
-    ax1.legend(loc="lower left", fontsize=9)
+    ax1.legend(loc="lower left", fontsize=9, ncol=n_det)
     _style_ecg_axes(ax1)
 
-    ax2.bar(x - width / 2, pt_sub["mae_ms"].to_numpy(dtype=float), width, label="Pan–Tompkins (Custom)", color="#2563eb")
-    ax2.bar(x + width / 2, xq_sub["mae_ms"].to_numpy(dtype=float), width, label="WFDB XQRS", color="#0d9488")
-    ax2.axhline(1000.0 / 360.0, color="#64748b", linestyle="--", linewidth=0.9, label="1 Sample Δt (2.78 ms)")
+    ax2.axhline(1000.0 / 360.0, color="#dc2626", linestyle="--", linewidth=0.9, label="1 Sample Δt (2.78 ms)")
     ax2.set_ylabel("Temporal MAE_t (ms)")
     ax2.set_xticks(x)
     ax2.set_xticklabels(scenarios, rotation=16, ha="right")
     ax2.set_title("Temporal Localization Accuracy Comparison (MAE_t)", fontsize=10.5, fontweight="bold")
-    ax2.legend(loc="upper left", fontsize=8.5)
+    ax2.legend(loc="upper left", fontsize=8.5, ncol=n_det + 1)
     _style_ecg_axes(ax2)
 
     fig.savefig(out_file, dpi=200)
     plt.close(fig)
     return out_file
+
+
+def save_v03_three_way_summary_plot(
+    pilot_3way_df: pd.DataFrame,
+    output_path: str | Path,
+) -> Path:
+    """v0.3.0 Overview Plot: 3-way comparison (PT v1 vs PT v2 vs WFDB XQRS) across all 5 pilot records."""
+    out_file = Path(output_path)
+    out_file.parent.mkdir(parents=True, exist_ok=True)
+
+    detectors = ["Pan-Tompkins v1", "Pan-Tompkins v2", "WFDB XQRS"]
+    colors = {"Pan-Tompkins v1": "#64748b", "Pan-Tompkins v2": "#16a34a", "WFDB XQRS": "#0284c7"}
+    records = ["100", "101", "103", "105", "106"]
+
+    base_df = pilot_3way_df[pilot_3way_df["scenario_key"] == "baseline"]
+    awgn5_df = pilot_3way_df[pilot_3way_df["scenario_key"] == "white_noise_5dB"]
+
+    fig, axes = plt.subplots(2, 2, figsize=(13.6, 8.8), constrained_layout=True)
+
+    # Panel A: Baseline MAE_t across all 5 records (Target 1: Sub-millisecond R-peak alignment)
+    ax = axes[0, 0]
+    x = np.arange(len(records))
+    w = 0.25
+    for idx, det in enumerate(detectors):
+        sub = base_df[base_df["detector"] == det].set_index("record").reindex(records)
+        bars = ax.bar(x + (idx - 1) * w, sub["mae_ms"].to_numpy(dtype=float), w, label=det, color=colors[det])
+        for b in bars:
+            h = b.get_height()
+            ax.annotate(f"{h:.2f}", (b.get_x() + b.get_width() / 2, h), xytext=(0, 2), textcoords="offset points", ha="center", fontsize=7.2)
+    ax.axhline(1000.0 / 360.0, color="#dc2626", linestyle=":", linewidth=0.95, label="1 Sample Δt (2.78 ms)")
+    ax.set_xticks(x)
+    ax.set_xticklabels([f"Rec {r}" for r in records])
+    ax.set_ylabel("Baseline MAE_t (ms)")
+    ax.set_ylim(0.0, 3.05)
+    ax.set_title("A. Target 1 — R-Peak Timing Error MAE_t (Baseline, 30m)", fontsize=10.5, fontweight="bold")
+    ax.legend(loc="upper left", fontsize=8.0, ncol=2)
+    _style_ecg_axes(ax)
+
+    # Panel B: Record 105 False Positives across Baseline, AWGN 5 dB, and Real EM 6 dB (Target 2: Motion SQI Gate)
+    ax = axes[0, 1]
+    r105_keys = ["baseline", "white_noise_5dB", "nstdb_em_6dB"]
+    r105_lbls = ["Baseline", "AWGN 5 dB", "Real EM (+6 dB)"]
+    r105_df = pilot_3way_df[(pilot_3way_df["record"] == "105") & (pilot_3way_df["scenario_key"].isin(r105_keys))]
+    x105 = np.arange(len(r105_keys))
+    for idx, det in enumerate(detectors):
+        sub = r105_df[r105_df["detector"] == det].set_index("scenario_key").reindex(r105_keys)
+        bars = ax.bar(x105 + (idx - 1) * w, sub["fp"].to_numpy(dtype=float), w, label=det, color=colors[det])
+        for b in bars:
+            h = b.get_height()
+            ax.annotate(f"{int(round(h))}", (b.get_x() + b.get_width() / 2, h), xytext=(0, 2), textcoords="offset points", ha="center", fontsize=8.0, fontweight="bold")
+    ax.set_xticks(x105)
+    ax.set_xticklabels(r105_lbls)
+    ax.set_ylabel("False Positives (FP count)")
+    ax.set_ylim(0, 52)
+    ax.set_title("B. Target 2 — Motion Artifact False Positives (Record 105)", fontsize=10.5, fontweight="bold")
+    ax.legend(loc="upper left", fontsize=8.0)
+    _style_ecg_axes(ax)
+
+    # Panel C: Record 106 Missed Beats (FN) across Baseline, AWGN 5 dB, and Real EM 6 dB (Target 3: PVC Rescue)
+    ax = axes[1, 0]
+    r106_df = pilot_3way_df[(pilot_3way_df["record"] == "106") & (pilot_3way_df["scenario_key"].isin(r105_keys))]
+    for idx, det in enumerate(detectors):
+        sub = r106_df[r106_df["detector"] == det].set_index("scenario_key").reindex(r105_keys)
+        bars = ax.bar(x105 + (idx - 1) * w, sub["fn"].to_numpy(dtype=float), w, label=det, color=colors[det])
+        for b in bars:
+            h = b.get_height()
+            ax.annotate(f"{int(round(h))}", (b.get_x() + b.get_width() / 2, h), xytext=(0, 2), textcoords="offset points", ha="center", fontsize=8.0, fontweight="bold")
+    ax.set_xticks(x105)
+    ax.set_xticklabels(r105_lbls)
+    ax.set_ylabel("Missed Beats / False Negatives (FN count)")
+    ax.set_ylim(0, 108)
+    ax.set_title("C. Target 3 — Missed Multiform PVCs / FNs (Record 106)", fontsize=10.5, fontweight="bold")
+    ax.legend(loc="upper left", fontsize=8.0)
+    _style_ecg_axes(ax)
+
+    # Panel D: Pooled 5-Record Error Totals (FP + FN out of 10,789 beats) at Baseline & AWGN 5 dB
+    ax = axes[1, 1]
+    cond_dfs = [("Pooled Baseline\n(10,789 beats)", base_df), ("Pooled AWGN 5 dB\n(10,789 beats)", awgn5_df)]
+    xp = np.arange(len(cond_dfs))
+    for idx, det in enumerate(detectors):
+        tot_errs = []
+        annotations = []
+        for _, cdf in cond_dfs:
+            sub = cdf[cdf["detector"] == det]
+            fp_sum = int(sub["fp"].sum())
+            fn_sum = int(sub["fn"].sum())
+            tot_errs.append(fp_sum + fn_sum)
+            annotations.append(f"{fp_sum + fn_sum}\n({fp_sum}FP/{fn_sum}FN)")
+        bars = ax.bar(xp + (idx - 1) * w, tot_errs, w, label=det, color=colors[det])
+        for b, txt in zip(bars, annotations):
+            h = b.get_height()
+            ax.annotate(txt, (b.get_x() + b.get_width() / 2, h), xytext=(0, 2), textcoords="offset points", ha="center", fontsize=7.5)
+    ax.set_xticks(xp)
+    ax.set_xticklabels([c[0] for c in cond_dfs])
+    ax.set_ylabel("Total Classification Errors (FP + FN)")
+    ax.set_ylim(0, max(165, int(ax.get_ylim()[1] * 1.25)))
+    ax.set_title("D. Pooled Total Errors (FP + FN) Across All 5 Pilot Records", fontsize=10.5, fontweight="bold")
+    ax.legend(loc="upper left", fontsize=8.0)
+    _style_ecg_axes(ax)
+
+    fig.suptitle(
+        "ECG-Integrity-Lab v0.3.0 — Three-Way Benchmark: Pan–Tompkins v1 vs. Pan–Tompkins v2 vs. WFDB XQRS",
+        fontsize=12.5,
+        fontweight="bold",
+    )
+    fig.savefig(out_file, dpi=200)
+    plt.close(fig)
+    return out_file
+
+
+def save_v03_nstdb_comparison_plot(
+    nstdb_3way_df: pd.DataFrame,
+    output_path: str | Path,
+    record_id: str = "100",
+) -> Path:
+    """v0.3.0 Real Noise Stress Test 3-way comparison (PT v1 vs PT v2 vs WFDB XQRS) on ma and em."""
+    out_file = Path(output_path)
+    out_file.parent.mkdir(parents=True, exist_ok=True)
+
+    detectors = ["Pan-Tompkins v1", "Pan-Tompkins v2", "WFDB XQRS"]
+    colors = {"Pan-Tompkins v1": "#64748b", "Pan-Tompkins v2": "#16a34a", "WFDB XQRS": "#0284c7"}
+    markers = {"Pan-Tompkins v1": "o", "Pan-Tompkins v2": "s", "WFDB XQRS": "^"}
+
+    fig, axes = plt.subplots(2, 2, figsize=(12.6, 7.8), sharex=True, constrained_layout=True)
+
+    for col_idx, (ntype, ntitle) in enumerate([("ma", "Muscle Artifact (nstdb/ma)"), ("em", "Electrode Motion (nstdb/em)")]):
+        ax_f1 = axes[0, col_idx]
+        ax_mae = axes[1, col_idx]
+        sub_n = nstdb_3way_df[nstdb_3way_df["noise_type"] == ntype]
+
+        for det in detectors:
+            sub_d = sub_n[sub_n["detector"] == det].sort_values("snr_db", ascending=False)
+            snrs = sub_d["snr_db"].to_numpy(dtype=float)
+            ax_f1.plot(snrs, sub_d["f1_score"].to_numpy(dtype=float) * 100.0, marker=markers[det], color=colors[det], linewidth=1.85, label=det)
+            ax_mae.plot(snrs, sub_d["mae_ms"].to_numpy(dtype=float), marker=markers[det], color=colors[det], linewidth=1.85, label=det)
+
+        ax_f1.set_ylabel("F1-Score (%)")
+        ax_f1.set_title(f"{ntitle} — F1-Score (%)", fontsize=10.5, fontweight="bold")
+        ax_f1.legend(loc="lower left", fontsize=8.2)
+        _style_ecg_axes(ax_f1)
+
+        ax_mae.set_xlim(25.5, -7.5)
+        ax_mae.axhline(1000.0 / 360.0, color="#dc2626", linestyle=":", linewidth=0.95, label="1 Sample Δt (2.78 ms)")
+        ax_mae.set_xlabel("Target Signal-to-Noise Ratio (dB) [Decreasing →]")
+        ax_mae.set_ylabel("Temporal MAE_t (ms)")
+        ax_mae.set_title(f"{ntitle} — Temporal MAE_t (ms)", fontsize=10.5, fontweight="bold")
+        ax_mae.legend(loc="upper left", fontsize=8.0)
+        _style_ecg_axes(ax_mae)
+
+    fig.suptitle(
+        f"MIT-BIH Noise Stress Test (Record {record_id}, 30m) — Pan–Tompkins v1 vs. v2 vs. WFDB XQRS",
+        fontsize=12,
+        fontweight="bold",
+    )
+    fig.savefig(out_file, dpi=200)
+    plt.close(fig)
+    return out_file
+
+
+def save_v03_hrv_and_subsample_plot(
+    hrv_df: pd.DataFrame,
+    output_path: str | Path,
+) -> Path:
+    """v0.3.0 Metrology Plot: MAE_t vs quantized .atr and downstream RMSSD HRV bias on Record 100."""
+    out_file = Path(output_path)
+    out_file.parent.mkdir(parents=True, exist_ok=True)
+
+    methods = [
+        "Pan-Tompkins v1 (Raw Snap)",
+        "Pan-Tompkins v2 (Discrete 5–20 Hz)",
+        "Pan-Tompkins v2 (Parabolic Sub-Sample)",
+        "WFDB XQRS",
+    ]
+    colors = {
+        "Pan-Tompkins v1 (Raw Snap)": "#64748b",
+        "Pan-Tompkins v2 (Discrete 5–20 Hz)": "#16a34a",
+        "Pan-Tompkins v2 (Parabolic Sub-Sample)": "#7c3aed",
+        "WFDB XQRS": "#0284c7",
+    }
+    markers = {
+        "Pan-Tompkins v1 (Raw Snap)": "o",
+        "Pan-Tompkins v2 (Discrete 5–20 Hz)": "s",
+        "Pan-Tompkins v2 (Parabolic Sub-Sample)": "D",
+        "WFDB XQRS": "^",
+    }
+    conds = ["Baseline", "White noise (20 dB)", "White noise (10 dB)", "White noise (5 dB)"]
+    short_lbls = ["Baseline", "AWGN 20 dB", "AWGN 10 dB", "AWGN 5 dB"]
+    x = np.arange(len(conds))
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(13.2, 5.2), constrained_layout=True)
+
+    for m in methods:
+        sub = hrv_df[hrv_df["method"] == m].set_index("scenario").reindex(conds)
+        ax1.plot(x, sub["mae_ms"].to_numpy(dtype=float), marker=markers[m], color=colors[m], linewidth=1.9, markersize=6, label=m)
+        ax2.plot(
+            x,
+            np.abs(sub["rmssd_error_percent"].to_numpy(dtype=float)),
+            marker=markers[m],
+            color=colors[m],
+            linewidth=1.9,
+            markersize=6,
+            label=m,
+        )
+
+    ax1.set_xticks(x)
+    ax1.set_xticklabels(short_lbls)
+    ax1.set_ylabel("MAE_t vs. Discrete .atr Reference (ms)")
+    ax1.set_title("A. R-Peak MAE_t Relative to Integer .atr Annotations", fontsize=10.5, fontweight="bold")
+    ax1.legend(loc="upper left", fontsize=8.0)
+    _style_ecg_axes(ax1)
+
+    ax2.set_xticks(x)
+    ax2.set_xticklabels(short_lbls)
+    ax2.set_ylabel("|RMSSD Error| Relative to Clean Reference (%)")
+    ax2.set_title("B. Downstream Sinus NN-HRV (RMSSD) Magnitude Error (%)", fontsize=10.5, fontweight="bold")
+    ax2.legend(loc="upper left", fontsize=8.0)
+    _style_ecg_axes(ax2)
+
+    fig.suptitle(
+        "Record 100 (n = 2,196 Sinus NN Pairs) — Quantized .atr Alignment vs. Continuous HRV (RMSSD) Fidelity",
+        fontsize=11.5,
+        fontweight="bold",
+    )
+    fig.savefig(out_file, dpi=200)
+    plt.close(fig)
+    return out_file
+
 

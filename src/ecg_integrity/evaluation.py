@@ -87,14 +87,16 @@ class BeatEvaluationResult:
 
 def match_beats_one_to_one(
     ref_peaks: np.ndarray | list[int],
-    det_peaks: np.ndarray | list[int],
+    det_peaks: np.ndarray | list[int] | list[float],
     fs: float,
     tolerance_ms: float = 150.0,
 ) -> BeatEvaluationResult:
     """Compare detected QRS peaks against expert reference annotations (strict 1-to-1).
 
     Preserves the original sorted reference indices so callers can stratify TP/FN
-    by beat morphology symbol (e.g., N, A, V, Q).
+    by beat morphology symbol (e.g., N, A, V, Q). Supports both discrete integer
+    sample indices (default) and floating-point sub-sample peak coordinates (e.g.,
+    from 3-point parabolic vertex interpolation).
     """
     if not np.isfinite(fs) or fs <= 0.0:
         raise ValueError(f"Sampling frequency 'fs' must be finite and > 0 Hz; got {fs!r}.")
@@ -110,20 +112,27 @@ def match_beats_one_to_one(
         ref = ref[unique_mask]
         ref_order = ref_order[unique_mask]
 
-    det = np.unique(np.asarray(det_peaks, dtype=np.int64))
-    tol_samples = int(round((tolerance_ms / 1000.0) * fs))
+    det_raw = np.asarray(det_peaks)
+    is_float_det = bool(np.issubdtype(det_raw.dtype, np.floating))
+    if is_float_det:
+        det = np.unique(det_raw.astype(np.float64))
+        tol_limit: float | int = (float(tolerance_ms) / 1000.0) * float(fs)
+    else:
+        det = np.unique(det_raw.astype(np.int64))
+        tol_limit = int(round((tolerance_ms / 1000.0) * fs))
     dt_ms = 1000.0 / float(fs)
 
-    candidates: list[tuple[int, int, int]] = []
+    candidates: list[tuple[float, int, int]] = []
     if ref.size > 0 and det.size > 0:
-        left_indices = np.searchsorted(det, ref - tol_samples, side="left")
-        right_indices = np.searchsorted(det, ref + tol_samples, side="right")
+        left_indices = np.searchsorted(det, ref - tol_limit, side="left")
+        right_indices = np.searchsorted(det, ref + tol_limit, side="right")
         for r_idx in range(ref.size):
-            r_samp = int(ref[r_idx])
+            r_samp = float(ref[r_idx]) if is_float_det else int(ref[r_idx])
             for d_idx in range(int(left_indices[r_idx]), int(right_indices[r_idx])):
-                diff = abs(int(det[d_idx]) - r_samp)
-                if diff <= tol_samples:
-                    candidates.append((diff, r_idx, d_idx))
+                d_val = float(det[d_idx]) if is_float_det else int(det[d_idx])
+                diff = abs(d_val - r_samp)
+                if diff <= (tol_limit + (1e-9 if is_float_det else 0)):
+                    candidates.append((float(diff), r_idx, d_idx))
 
     candidates.sort(key=lambda item: (item[0], item[1], item[2]))
 

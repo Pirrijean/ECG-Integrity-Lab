@@ -14,7 +14,12 @@ import numpy as np
 import pandas as pd
 from wfdb import processing
 
-from ecg_integrity.detector import QRSDetectorConfig, detect_qrs_pan_tompkins
+from ecg_integrity.detector import (
+    QRSDetectorConfig,
+    QRSDetectorV2Config,
+    detect_qrs_pan_tompkins,
+    detect_qrs_pan_tompkins_v2,
+)
 from ecg_integrity.evaluation import DEFAULT_TOLERANCES_MS, evaluate_tolerance_sweep, match_beats_one_to_one
 
 
@@ -33,17 +38,30 @@ def compare_detectors_on_scenarios(
     primary_tolerance_ms: float = 150.0,
     tolerances_ms: tuple[float, ...] = DEFAULT_TOLERANCES_MS,
     config: QRSDetectorConfig | None = None,
+    include_v2: bool = False,
+    v2_config: QRSDetectorV2Config | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Compare Custom Pan–Tompkins vs. WFDB XQRS across scenarios and tolerance sweeps."""
+    """Compare Custom Pan–Tompkins (v1 and optional v2) vs. WFDB XQRS across scenarios and tolerance sweeps."""
     summary_rows: list[dict[str, Any]] = []
     sweep_rows: list[dict[str, Any]] = []
 
     for scen in scenarios:
         sig = scen["signal"]
-        pt_peaks = detect_qrs_pan_tompkins(sig, fs=fs, config=config).r_peaks
+        pt_v1_peaks = detect_qrs_pan_tompkins(sig, fs=fs, config=config).r_peaks
         xqrs_peaks = detect_qrs_wfdb_xqrs(sig, fs=fs, learn=True)
 
-        for det_name, peaks in (("Pan-Tompkins (Custom)", pt_peaks), ("WFDB XQRS", xqrs_peaks)):
+        detectors_list: list[tuple[str, np.ndarray]] = [("Pan-Tompkins (Custom)", pt_v1_peaks)]
+        if include_v2:
+            pt_v2_peaks = detect_qrs_pan_tompkins_v2(sig, fs=fs, config=v2_config).r_peaks
+            detectors_list = [
+                ("Pan-Tompkins v1", pt_v1_peaks),
+                ("Pan-Tompkins v2", pt_v2_peaks),
+                ("WFDB XQRS", xqrs_peaks),
+            ]
+        else:
+            detectors_list.append(("WFDB XQRS", xqrs_peaks))
+
+        for det_name, peaks in detectors_list:
             primary_res = match_beats_one_to_one(
                 ref_peaks=r_peaks_ref,
                 det_peaks=peaks,
