@@ -37,9 +37,9 @@ def evaluate_nn_hrv_jitter_impact(
     if ref_samples.size != len(beat_symbols):
         raise ValueError("r_peaks_ref and beat_symbols must have identical length.")
 
-    # Map original reference beat index -> matched detected sample index
-    ref_idx_to_det_sample: dict[int, int] = {
-        int(orig_idx): int(det_samp)
+    # Map original reference beat index -> matched detected sample coordinate (int or float sub-sample)
+    ref_idx_to_det_sample: dict[int, float] = {
+        int(orig_idx): float(det_samp)
         for orig_idx, det_samp in zip(eval_result.matched_ref_indices, eval_result.matched_det_samples)
     }
 

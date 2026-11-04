@@ -15,9 +15,14 @@ import scipy
 import wfdb
 
 from ecg_integrity import __version__
-from ecg_integrity.benchmark import compare_detectors_on_scenarios
+from ecg_integrity.benchmark import compare_detectors_on_scenarios, detect_qrs_wfdb_xqrs
 from ecg_integrity.dataset import load_mitbih_record
-from ecg_integrity.detector import QRSDetectorConfig, detect_qrs_pan_tompkins
+from ecg_integrity.detector import (
+    QRSDetectorConfig,
+    QRSDetectorV2Config,
+    detect_qrs_pan_tompkins,
+    detect_qrs_pan_tompkins_v2,
+)
 from ecg_integrity.digital_phantom import evaluate_digital_phantom, generate_1mv_60bpm_phantom
 from ecg_integrity.error_analysis import (
     compute_reference_beat_morphology_table,
@@ -38,6 +43,9 @@ from ecg_integrity.reporting import (
     save_run_metadata_json,
     save_scenario_diagnostic_plot,
     save_tolerance_sweep_plot,
+    save_v03_hrv_and_subsample_plot,
+    save_v03_nstdb_comparison_plot,
+    save_v03_three_way_summary_plot,
     save_xqrs_benchmark_plot,
 )
 from ecg_integrity.signal_processing import add_white_noise, build_protocol_scenarios
@@ -464,6 +472,143 @@ def run_benchmark_protocol(
     return summary_df
 
 
+def run_v03_comparison_suite(
+    records: tuple[str, ...] = ("100", "101", "103", "105", "106"),
+    channel: int = 0,
+    seconds: float = 1800.0,
+    seed: int = 42,
+    tolerance_ms: float = 150.0,
+    output_arg: str | None = None,
+) -> dict[str, Any]:
+    """v0.3.0 Complete 3-Way Comparison: Pan–Tompkins v1 vs. Pan–Tompkins v2 vs. WFDB XQRS."""
+    out_dir = Path(output_arg) if output_arg else Path("results") / "v0_3_comparison"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    pilot_rows: list[dict[str, Any]] = []
+    sweep_rows: list[dict[str, Any]] = []
+    hrv_100_rows: list[dict[str, Any]] = []
+
+    for rid in records:
+        rec = load_mitbih_record(record_id=rid, channel=channel, seconds=seconds)
+        scenarios = build_protocol_scenarios(rec.signal, fs=rec.fs, seed=seed)
+        em_noise, _ = load_nstdb_noise("em", n_samples=rec.signal.size, channel=0, expected_fs=rec.fs)
+        em_6db, _ = mix_ecg_with_real_noise(rec.signal, em_noise, snr_db=6.0, fs=rec.fs)
+        scenarios.append(
+            {
+                "key": "nstdb_em_6dB",
+                "scenario": "Real EM (6 dB)",
+                "condition": "NSTDB Electrode Motion 6 dB",
+                "signal": em_6db,
+                "parameters": {"type": "nstdb_em", "snr_db": 6.0},
+            }
+        )
+
+        sum_df, sw_df = compare_detectors_on_scenarios(
+            record_id=rec.record_id,
+            scenarios=scenarios,
+            r_peaks_ref=rec.r_peaks_ref,
+            fs=rec.fs,
+            primary_tolerance_ms=tolerance_ms,
+            include_v2=True,
+        )
+        pilot_rows.extend(sum_df.to_dict("records"))
+        sweep_rows.extend(sw_df.to_dict("records"))
+
+        # Save per-record 3-way benchmark figure for key records (100, 105, 106)
+        if rid in ("100", "105", "106"):
+            save_xqrs_benchmark_plot(
+                sum_df,
+                output_path=out_dir / f"fig_v03_benchmark_rec{rid}.png",
+                title=f"Three-Way Detector Benchmark — Record {rid} ({rec.channel_name}, 30 min)",
+            )
+
+        # On Record 100, evaluate discrete vs parabolic sub-sample MAE_t and RMSSD HRV propagation
+        if rid == "100":
+            for scen in scenarios:
+                if scen["key"] not in ("baseline", "white_noise_20dB", "white_noise_10dB", "white_noise_5dB"):
+                    continue
+                sig = scen["signal"]
+                v1_out = detect_qrs_pan_tompkins(sig, fs=rec.fs)
+                v2_out = detect_qrs_pan_tompkins_v2(sig, fs=rec.fs)
+                xq_pks = detect_qrs_wfdb_xqrs(sig, fs=rec.fs)
+
+                for m_name, pks in [
+                    ("Pan-Tompkins v1 (Raw Snap)", v1_out.r_peaks),
+                    ("Pan-Tompkins v2 (Discrete 5–20 Hz)", v2_out.r_peaks),
+                    ("Pan-Tompkins v2 (Parabolic Sub-Sample)", v2_out.r_peaks_subsample),
+                    ("WFDB XQRS", xq_pks),
+                ]:
+                    ev = match_beats_one_to_one(rec.r_peaks_ref, pks, fs=rec.fs, tolerance_ms=tolerance_ms)
+                    hrv = evaluate_nn_hrv_jitter_impact(rec.r_peaks_ref, rec.beat_symbols, ev, fs=rec.fs)
+                    hrv_100_rows.append(
+                        {
+                            "record": "100",
+                            "method": m_name,
+                            "scenario_key": scen["key"],
+                            "scenario": scen["scenario"],
+                            "mae_ms": round(ev.mae_ms, 4),
+                            "std_error_ms": round(ev.std_error_ms, 4),
+                            **hrv,
+                        }
+                    )
+
+    pilot_3way_df = pd.DataFrame(pilot_rows)
+    pilot_3way_df.to_csv(out_dir / "pilot_3way_metrics.csv", index=False)
+    pd.DataFrame(sweep_rows).to_csv(out_dir / "pilot_3way_tolerance_sweep.csv", index=False)
+
+    # Pooled micro-aggregated counts by detector and scenario
+    from ecg_integrity.evaluation import compute_micro_aggregated_metrics
+
+    pooled_parts = []
+    for det_name in ["Pan-Tompkins v1", "Pan-Tompkins v2", "WFDB XQRS"]:
+        sub = pilot_3way_df[pilot_3way_df["detector"] == det_name]
+        agg = compute_micro_aggregated_metrics(sub)
+        agg.insert(0, "detector", det_name)
+        pooled_parts.append(agg)
+    pooled_3way_df = pd.concat(pooled_parts, ignore_index=True)
+    pooled_3way_df.to_csv(out_dir / "pooled_3way_summary.csv", index=False)
+
+    save_v03_three_way_summary_plot(pilot_3way_df, out_dir / "fig_v03_three_way_overview.png")
+
+    hrv_100_df = pd.DataFrame(hrv_100_rows)
+    hrv_100_df.to_csv(out_dir / "record_100_hrv_subsample.csv", index=False)
+    save_v03_hrv_and_subsample_plot(hrv_100_df, out_dir / "fig_v03_hrv_subsample_metrology.png")
+
+    # NSTDB 3-way Stress Test across 24..−6 dB on Record 100
+    rec100 = load_mitbih_record(record_id="100", channel=channel, seconds=seconds)
+    nstdb_rows: list[dict[str, Any]] = []
+    for ntype in NSTDB_NOISE_TYPES:
+        noise_seg, noise_meta = load_nstdb_noise(ntype, n_samples=rec100.signal.size, channel=0, expected_fs=rec100.fs)
+        for snr_db in NSTDB_DEFAULT_SNRS_DB:
+            noisy_sig, _ = mix_ecg_with_real_noise(rec100.signal, noise_seg, snr_db=snr_db, fs=rec100.fs)
+            v1_p = detect_qrs_pan_tompkins(noisy_sig, fs=rec100.fs).r_peaks
+            v2_p = detect_qrs_pan_tompkins_v2(noisy_sig, fs=rec100.fs).r_peaks
+            xq_p = detect_qrs_wfdb_xqrs(noisy_sig, fs=rec100.fs)
+            for dname, pks in [("Pan-Tompkins v1", v1_p), ("Pan-Tompkins v2", v2_p), ("WFDB XQRS", xq_p)]:
+                ev = match_beats_one_to_one(rec100.r_peaks_ref, pks, fs=rec100.fs, tolerance_ms=tolerance_ms)
+                nstdb_rows.append(
+                    {
+                        "record": "100",
+                        "detector": dname,
+                        "noise_type": ntype,
+                        "noise_label": noise_meta["label"],
+                        "snr_db": float(snr_db),
+                        **ev.to_metrics_dict(),
+                    }
+                )
+    nstdb_3way_df = pd.DataFrame(nstdb_rows)
+    nstdb_3way_df.to_csv(out_dir / "nstdb_3way_metrics.csv", index=False)
+    save_v03_nstdb_comparison_plot(nstdb_3way_df, out_dir / "fig_v03_nstdb_three_way.png", record_id="100")
+
+    return {
+        "out_dir": out_dir,
+        "pooled_3way_df": pooled_3way_df,
+        "pilot_3way_df": pilot_3way_df,
+        "nstdb_3way_df": nstdb_3way_df,
+        "hrv_100_df": hrv_100_df,
+    }
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="ecg_integrity",
@@ -502,6 +647,11 @@ def build_parser() -> argparse.ArgumentParser:
     bench_p.add_argument("--channel", type=int, default=0, help="Zero-based ECG channel index")
     bench_p.add_argument("--seconds", type=float, default=300.0, help="Duration in seconds")
     bench_p.add_argument("--output", type=str, default=None, help="Output directory")
+
+    # Subcommand 5: compare-v2 (v0.3.0 3-way comparison suite)
+    v2_p = subparsers.add_parser("compare-v2", help="Run full v0.3.0 3-way comparison (PT v1 vs PT v2 vs WFDB XQRS)")
+    v2_p.add_argument("--seconds", type=float, default=1800.0, help="Duration per record in seconds (default: 1800)")
+    v2_p.add_argument("--output", type=str, default=None, help="Output directory (default: results/v0_3_comparison)")
 
     return parser
 
@@ -561,6 +711,13 @@ def main(argv: list[str] | None = None) -> int:
             output_arg=args.output,
         )
         print(df[["detector", "scenario", "tp", "fp", "fn", "sensitivity", "ppv", "f1_score", "mae_ms"]].to_string(index=False))
+        return 0
+
+    if args.command == "compare-v2":
+        res = run_v03_comparison_suite(seconds=args.seconds, output_arg=args.output)
+        print("=== Pooled 5-Record 3-Way Summary ===")
+        print(res["pooled_3way_df"].to_string(index=False))
+        print(f"Saved v0.3.0 3-way outputs to: {res['out_dir']}")
         return 0
 
     return 1

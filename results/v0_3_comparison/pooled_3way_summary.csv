@@ -1,0 +1,22 @@
+detector,scenario_key,scenario,condition,n_ref,n_det,tp,fp,fn,sensitivity,ppv,f1_score
+Pan-Tompkins v1,baseline,Baseline,Original signal,10789,10814,10777,37,12,0.998888,0.996579,0.997732
+Pan-Tompkins v1,baseline_wander,Baseline wander,"0.20 mV, 0.25 Hz",10789,10814,10777,37,12,0.998888,0.996579,0.997732
+Pan-Tompkins v1,mains_interference,Mains interference,"0.05 mV, 60 Hz",10789,10815,10778,37,11,0.99898,0.996579,0.997778
+Pan-Tompkins v1,white_noise_20dB,White noise (20 dB),AWGN 20 dB SNR,10789,10814,10774,40,15,0.99861,0.996301,0.997454
+Pan-Tompkins v1,white_noise_10dB,White noise (10 dB),AWGN 10 dB SNR,10789,10811,10773,38,16,0.998517,0.996485,0.9975
+Pan-Tompkins v1,white_noise_5dB,White noise (5 dB),AWGN 5 dB SNR,10789,10811,10769,42,20,0.998146,0.996115,0.99713
+Pan-Tompkins v1,nstdb_em_6dB,Real EM (6 dB),NSTDB Electrode Motion 6 dB,10789,10827,10771,56,18,0.998332,0.994828,0.996577
+Pan-Tompkins v2,baseline,Baseline,Original signal,10789,10801,10777,24,12,0.998888,0.997778,0.998333
+Pan-Tompkins v2,baseline_wander,Baseline wander,"0.20 mV, 0.25 Hz",10789,10801,10776,25,13,0.998795,0.997685,0.99824
+Pan-Tompkins v2,mains_interference,Mains interference,"0.05 mV, 60 Hz",10789,10801,10777,24,12,0.998888,0.997778,0.998333
+Pan-Tompkins v2,white_noise_20dB,White noise (20 dB),AWGN 20 dB SNR,10789,10800,10775,25,14,0.998702,0.997685,0.998194
+Pan-Tompkins v2,white_noise_10dB,White noise (10 dB),AWGN 10 dB SNR,10789,10800,10774,26,15,0.99861,0.997593,0.998101
+Pan-Tompkins v2,white_noise_5dB,White noise (5 dB),AWGN 5 dB SNR,10789,10799,10774,25,15,0.99861,0.997685,0.998147
+Pan-Tompkins v2,nstdb_em_6dB,Real EM (6 dB),NSTDB Electrode Motion 6 dB,10789,10807,10769,38,20,0.998146,0.996484,0.997314
+WFDB XQRS,baseline,Baseline,Original signal,10789,10731,10694,37,95,0.991195,0.996552,0.993866
+WFDB XQRS,baseline_wander,Baseline wander,"0.20 mV, 0.25 Hz",10789,10731,10694,37,95,0.991195,0.996552,0.993866
+WFDB XQRS,mains_interference,Mains interference,"0.05 mV, 60 Hz",10789,10731,10694,37,95,0.991195,0.996552,0.993866
+WFDB XQRS,white_noise_20dB,White noise (20 dB),AWGN 20 dB SNR,10789,10730,10693,37,96,0.991102,0.996552,0.993819
+WFDB XQRS,white_noise_10dB,White noise (10 dB),AWGN 10 dB SNR,10789,10728,10691,37,98,0.990917,0.996551,0.993726
+WFDB XQRS,white_noise_5dB,White noise (5 dB),AWGN 5 dB SNR,10789,10745,10687,58,102,0.990546,0.994602,0.99257
+WFDB XQRS,nstdb_em_6dB,Real EM (6 dB),NSTDB Electrode Motion 6 dB,10789,10736,10694,42,95,0.991195,0.996088,0.993635

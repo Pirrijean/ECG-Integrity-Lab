@@ -231,3 +231,86 @@ def test_nn_hrv_jitter_excludes_ectopic_beats_and_quantifies_rmssd_bias() -> Non
     assert hrv["rmssd_ref_ms"] == pytest.approx(0.0, abs=1e-6)
     assert hrv["rmssd_det_ms"] > 8.0
 
+
+def test_subsample_floating_point_matching_and_parabolic_vertex() -> None:
+    """v0.3.0: verify match_beats_one_to_one preserves sub-sample float coordinates without integer truncation."""
+    from ecg_integrity.detector import refine_peaks_parabolic
+
+    fs = 360.0
+    ref = np.array([360, 720, 1080], dtype=np.int64)
+    det_float = np.array([360.25, 719.75, 1080.0], dtype=np.float64)
+
+    res = match_beats_one_to_one(ref, det_float, fs=fs, tolerance_ms=50.0)
+    assert res.tp == 3
+    assert res.fp == 0
+    assert res.fn == 0
+    expected_mae_ms = ((0.25 + 0.25 + 0.0) / 3.0) * (1000.0 / fs)
+    assert res.mae_ms == pytest.approx(expected_mae_ms, rel=1e-6)
+
+    # Verify parabolic vertex interpolation recovers true sub-sample Gaussian peak
+    n = 200
+    t = np.arange(n, dtype=np.float64)
+    true_vertex = 100.32
+    wave = np.exp(-0.5 * ((t - true_vertex) / 4.0) ** 2)
+    disc_pk = np.array([int(np.argmax(wave))], dtype=np.int64)
+    sub_pk = refine_peaks_parabolic(wave, disc_pk)
+    assert abs(float(sub_pk[0]) - true_vertex) < 0.02
+
+
+def test_pan_tompkins_v2_sqi_rejects_interpolated_artifact_and_rescues_low_slope_pvc() -> None:
+    """v0.3.0: verify PT v2 rejects multi-lobe interpolated artifact and rescues wide low-slope ectopic beat."""
+    from ecg_integrity.detector import detect_qrs_pan_tompkins, detect_qrs_pan_tompkins_v2
+
+    fs = 360.0
+    n = int(16 * fs)
+    t = np.arange(n, dtype=np.float64) / fs
+    sig = np.zeros(n, dtype=np.float64)
+
+    # Regular 1.0 s sinus QRS train (narrow 11 ms sigma, 1.3 mV)
+    beat_times = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 8.55, 10.0, 11.0, 12.0, 13.0, 14.0]
+    ref_samples = np.array([int(round(bt * fs)) for bt in beat_times], dtype=np.int64)
+    for bt in beat_times:
+        if abs(bt - 8.55) < 1e-6:
+            # Beat at 8.55 s (followed by 1.45 s compensatory pause to 10.0 s): wide, low-slope PVC (45 ms sigma, 0.55 mV)
+            sig += 0.55 * np.exp(-0.5 * ((t - bt) / 0.042) ** 2)
+        else:
+            sig += 1.30 * np.exp(-0.5 * ((t - bt) / 0.011) ** 2)
+
+    # Inject a multi-lobe oscillatory motion/EMG burst at t = 4.48 s splitting the 4.0-5.0 s sinus interval
+    burst_env = np.exp(-0.5 * ((t - 4.48) / 0.14) ** 2)
+    sig += 0.85 * burst_env * np.sin(2.0 * np.pi * 13.0 * (t - 4.48))
+
+    v1_out = detect_qrs_pan_tompkins(sig, fs=fs)
+    v2_out = detect_qrs_pan_tompkins_v2(sig, fs=fs)
+
+    r_v1 = match_beats_one_to_one(ref_samples, v1_out.r_peaks, fs=fs, tolerance_ms=100.0)
+    r_v2 = match_beats_one_to_one(ref_samples, v2_out.r_peaks, fs=fs, tolerance_ms=100.0)
+
+    assert r_v2.fp < r_v1.fp or r_v2.fp == 0
+    assert r_v2.fn <= r_v1.fn
+    assert r_v2.f1_score >= r_v1.f1_score
+
+
+def test_pan_tompkins_v2_supports_dual_lead_secondary_signal() -> None:
+    """v0.3.0: verify optional secondary_signal fusion validates length and recovers beats."""
+    from ecg_integrity.detector import detect_qrs_pan_tompkins_v2
+
+    fs = 360.0
+    n = int(10 * fs)
+    t = np.arange(n, dtype=np.float64) / fs
+    ch0 = np.zeros(n, dtype=np.float64)
+    ch1 = np.zeros(n, dtype=np.float64)
+    refs = np.arange(360, n - 360, 360, dtype=np.int64)
+    for p in refs:
+        tp = p / fs
+        ch0 += 1.0 * np.exp(-0.5 * ((t - tp) / 0.012) ** 2)
+        ch1 += 0.8 * np.exp(-0.5 * ((t - tp) / 0.014) ** 2)
+
+    out = detect_qrs_pan_tompkins_v2(ch0, fs=fs, secondary_signal=ch1)
+    ev = match_beats_one_to_one(refs, out.r_peaks, fs=fs, tolerance_ms=50.0)
+    assert ev.f1_score == pytest.approx(1.0)
+
+    with pytest.raises(ValueError, match="secondary_signal length"):
+        detect_qrs_pan_tompkins_v2(ch0, fs=fs, secondary_signal=ch1[:-10])
+
+
