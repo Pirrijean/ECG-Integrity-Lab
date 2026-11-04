@@ -1,0 +1,7 @@
+record,scenario_key,scenario,condition,n_nn_intervals,rmssd_ref_ms,rmssd_det_ms,rmssd_diff_ms,rmssd_error_percent,sdnn_ref_ms,sdnn_det_ms,rr_mae_ms,rr_rmse_ms
+100,baseline,Baseline,Original signal,2196,27.8002,28.0963,0.296,1.0648,35.661,35.7184,1.5192,2.1413
+100,baseline_wander,Baseline wander,"0.20 mV, 0.25 Hz",2196,27.8002,28.0717,0.2715,0.9766,35.661,35.7148,1.5204,2.1471
+100,mains_interference,Mains interference,"0.05 mV, 60 Hz",2196,27.8002,28.2054,0.4052,1.4574,35.661,35.7704,1.5609,2.2227
+100,white_noise_20dB,White noise (20 dB),AWGN 20 dB SNR,2196,27.8002,28.0609,0.2607,0.9378,35.661,35.7196,1.5685,2.2036
+100,white_noise_10dB,White noise (10 dB),AWGN 10 dB SNR,2196,27.8002,28.2663,0.466,1.6764,35.661,35.7653,1.929,2.6608
+100,white_noise_5dB,White noise (5 dB),AWGN 5 dB SNR,2196,27.8002,28.507,0.7068,2.5423,35.661,35.8369,2.4147,3.231

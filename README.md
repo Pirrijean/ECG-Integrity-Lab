@@ -1,9 +1,9 @@
-# ECG-Integrity-Lab
+# ECG-Integrity-Lab (`v0.2.0`)
 
-**Open ECG Signal Conditioning & QRS Detector Verification Framework**  
-*From physiological biosignal acquisition to quantitative quality assurance*
+**Open ECG Signal Conditioning, Temporal Accuracy & Noise Sensitivity Verification Framework**  
+*Beyond F1-Score: Evaluating beat detection, temporal localization jitter, physical NSTDB noise, morphology sensitivity, and HRV propagation*
 
-A computer-only biomedical engineering framework designed to demonstrate physiological signal processing, instrumentation & ADC calibration concepts, metrological software verification, quantitative algorithm evaluation, Python modularity, and reproducible QA/QC.
+A computer-only biomedical engineering framework designed to characterize physiological signal conditioning, ADC header verification, functional software reference testing, multi-tolerance QRS evaluation, physical noise stress testing (`mitdb` + `nstdb`), morphology-specific failure analysis, and reproducible QA/QC.
 
 ---
 
@@ -11,64 +11,51 @@ A computer-only biomedical engineering framework designed to demonstrate physiol
 
 ```mermaid
 flowchart TD
-    A["PhysioNet / MIT-BIH Arrhythmia DB"] --> B["WFDB Data Loader (dataset.py)"]
-    B --> C["Header Metadata & Unit QA Validation"]
-    C --> D["Calibrated ECG Signal x[n] (mV, 360 Hz)"]
-    D --> E["Controlled Artifact Generator (signal_processing.py)"]
-    D --> F["Butterworth 5–20 Hz Conditioning (sosfiltfilt)"]
-    E --> F
-    F --> G["Pan–Tompkins-Inspired QRS Detector (detector.py)"]
-    B --> H["Expert Beat Annotations (.atr)"]
-    G --> I["1-to-1 Performance Evaluator (evaluation.py)"]
+    A["PhysioNet MIT-BIH (mitdb) + Noise Stress Test DB (nstdb)"] --> B["WFDB Loader & Header QA (dataset.py, nstdb.py)"]
+    B --> C["Calibrated ECG x[n] (mV, 360 Hz, Δt = 2.78 ms)"]
+    C --> D["Synthetic Perturbations & Physical Noise (bw, ma, em)"]
+    C --> E["Butterworth 5–20 Hz Conditioning (sosfiltfilt)"]
+    D --> E
+    E --> F["Pan–Tompkins-Inspired Detector (detector.py)"]
+    D --> G["Independent Benchmark: WFDB XQRS (benchmark.py)"]
+    B --> H["Filtered Beat Symbols (N, A, V, Q) (.atr)"]
+    F --> I["1-to-1 Multi-Tolerance Evaluator: 8.33–150 ms (evaluation.py)"]
+    G --> I
     H --> I
-    I --> J["Metrics: Se, PPV, F1-Score, MAE_t (ms)"]
-    J --> K["QA Reports, CSV, JSON Metadata & Figures 1–4 (reporting.py)"]
-    L["Digital Calibration Phantom (digital_phantom.py)"] --> M["Software Scale & Time-Base Verification"]
-    M --> K
+    I --> J["Morphology Diagnostics & ±300 ms FP Inspector (error_analysis.py)"]
+    I --> K["NN-Interval Time-Domain HRV Jitter Propagation (hrv.py)"]
+    L["Digital Reference Pulse Train (digital_phantom.py)"] --> M["Functional & Mathematical Scale/Rate Verification"]
+    J --> N["CSV Tables, JSON Traceability & Diagnostic Figures (reporting.py)"]
+    K --> N
+    M --> N
 ```
 
 ### Core Modules (`src/ecg_integrity/`)
 
 | Module | Responsibility |
 | :--- | :--- |
-| `dataset.py` | Retrieve MIT-BIH records & `.atr` beat annotations via WFDB; verify $f_s$, physical units (`mV`), ADC gain/baseline, finiteness, and physiological bounds. |
-| `signal_processing.py` | Zero-phase 4th-order Butterworth bandpass ($5\text{–}20\text{ Hz}$ via `sosfiltfilt`) and controlled perturbations (baseline wander, $60\text{ Hz}$ mains, reproducible AWGN). |
-| `detector.py` | Educational Pan–Tompkins-inspired QRS detector (bandpass, centered derivative, squaring, $120\text{ ms}$ moving-window integration, adaptive dual thresholds, $\pm 90\text{ ms}$ R-peak relocation). |
-| `evaluation.py` | Strict one-to-one beat matching within $\pm 150\text{ ms}$ tolerance; computes TP, FP, FN, Sensitivity, PPV, F1-score, and temporal localization error ($\text{MAE}_t$). |
-| `digital_phantom.py` | Deterministic $1.0\text{ mV}$ / $60\text{ bpm}$ digital pulse train generator & evaluator for software scale and rate verification. |
-| `reporting.py` | Generates publication-ready Figures 1–4, per-condition diagnostic waveforms, `metrics.csv`, and `run_metadata.json`. |
+| `dataset.py` | Load MIT-BIH records & `.atr` annotations; verify $f_s = 360\text{ Hz}$, units (`mV`), ADC gain/baseline, finiteness, and exclude non-beat markers (`+`, `~`, `\|`). |
+| `signal_processing.py` | Zero-phase 4th-order Butterworth SOS bandpass ($5\text{–}20\text{ Hz}$) and reproducible synthetic perturbations ($0.25\text{ Hz}$ wander, $60\text{ Hz}$ mains, seeded AWGN). |
+| `nstdb.py` | Load physical ambulatory noise (`bw`, `ma`, `em`) from PhysioNet's **MIT-BIH Noise Stress Test Database** and mix at controlled SNRs ($24$ to $-6\text{ dB}$). |
+| `detector.py` | Pan–Tompkins-inspired QRS detector with dynamic threshold trace (`THRESHOLD_I1`) and optional sub-sample parabolic refinement (`refine_peaks_parabolic`). |
+| `evaluation.py` | Strict 1-to-1 beat matching, multi-window **tolerance sweep** ($8.33, 16.67, 25, 50, 100, 150\text{ ms}$), and pooled micro-aggregated count metrics. |
+| `error_analysis.py` | Beat-symbol stratification (`N, A, V, Q`), biophysical feature extraction ($A_{\text{QRS}}, W_{\text{QRS}}, \max\|dV/dt\|, E_{\text{QRS}}$), and $\pm 300\text{ ms}$ FP waveform inspector. |
+| `benchmark.py` | Side-by-side comparison of Custom Pan–Tompkins against `wfdb.processing.xqrs_detect` under identical inputs and tolerances. |
+| `hrv.py` | Quantifies how QRS localization jitter ($RR_i' = RR_i + e_{i+1} - e_i$) biases `RMSSD` and `SDNN` across verified normal-to-normal (`N`–`N`) sinus intervals. |
+| `digital_phantom.py` | Deterministic $1.0\text{ mV}$ / $60\text{ bpm}$ digital pulse train for **functional and mathematical software verification** (distinct from physical hardware calibration). |
+| `reporting.py` | Publication-grade visualization suite for waveforms, tolerance curves, NSTDB stress tests, FP galleries, PVC morphology boxplots, and XQRS benchmarks. |
 
 ---
 
-## What it does
+## Scope, Safety & Methodological Rigor
 
-- Loads ECG signals and expert-reviewed beat annotations from PhysioNet's MIT-BIH Arrhythmia Database using WFDB.
-- Checks physical signal units (`mV`), sampling frequency ($360\text{ Hz}$), ADC gain, digital baseline, and finite/range integrity from the source header before filtering.
-- Applies a detector-oriented $5\text{–}20\text{ Hz}$ zero-phase Butterworth bandpass filter using second-order sections (`sosfiltfilt`).
-- Injects reproducible respiratory baseline wander ($0.20\text{ mV}$, $0.25\text{ Hz}$), $60\text{ Hz}$ power-line interference ($0.05\text{ mV}$), and Gaussian white noise at $20\text{ dB}$, $10\text{ dB}$, and $5\text{ dB}$ SNR.
-- Runs an educational Pan–Tompkins-inspired QRS detector with adaptive signal/noise peak tracking and searchback.
-- Compares detected beats to expert reference annotations using strict one-to-one matching ($\pm 150\text{ ms}$).
-- Reports TP, FP, FN, Sensitivity, Positive Predictive Value (PPV), F1-score, and Mean Absolute Temporal Error ($\text{MAE}_t$).
-- Includes a digital $1\text{ mV}$ / $60\text{ bpm}$ calibration phantom to unit-test amplitude and time-base calculations.
-- Saves CSV metrics, JSON QA traceability metadata, per-scenario diagnostic plots, and summary Figures 1–4.
+- **Exploratory Engineering Framework (Not a Medical Device):** This software is a research and verification test bench, **not** a clinically validated diagnostic system or medical device. The $5\text{–}20\text{ Hz}$ passband is scoped solely to QRS detection and distorts P/T waves and ST-segment morphology.
+- **Discrete Sampling Interval vs. Ensemble $\text{MAE}_t$:** At $f_s = 360\text{ Hz}$, individual discrete peak indices have a sampling interval of $\Delta t = 2.7778\text{ ms}$. Ensemble averages such as $\text{MAE}_t = 1.17\text{ ms}$ or $1.50\text{ ms}$ represent arithmetic means across beats, **not** sub-sample single-beat resolution. Signed error follows $e_i = t_{\text{det},i} - t_{\text{ref},i}$ (positive = detection lags behind reference).
+- **Statistical Structure:** Evaluating `10,789` beats across `6` conditions yields `64,734` *paired repeated-measures evaluation opportunities*, not independent observations. Pooled baseline summaries aggregate raw `TP`, `FP`, and `FN` counts rather than averaging per-record percentages. Remember also that MIT-BIH's 48 records come from 47 unique subjects (`201` and `202` share one subject).
 
 ---
 
-## Scope and safety
-
-This is an educational research and software-verification prototype. It is **not** a medical device, diagnostic system, clinical decision-support system, or a substitute for a clinician. Do not use it to make patient-care decisions. The $5\text{–}20\text{ Hz}$ filter is intended only to demonstrate QRS detection; it does not preserve all diagnostic ECG features, including P/T waves and ST-segment morphology.
-
----
-
-## Requirements
-
-- Python 3.10 or newer (Python 3.11 / 3.12 recommended)
-- Internet connection for first-time PhysioNet data retrieval (automatically cached under `data/raw/mitdb/`)
-- No GPU, sensor, ECG simulator, oscilloscope, or other lab hardware required
-
----
-
-## Install (Windows PowerShell)
+## Install & Run Tests (Windows PowerShell)
 
 ```powershell
 py -3.12 -m venv .venv
@@ -76,60 +63,28 @@ py -3.12 -m venv .venv
 python -m pip install --upgrade pip
 pip install -r requirements.txt
 pip install -e .
+pytest -v
 ```
 
-*(If Python 3.11 is installed on your machine, you may equivalently use `py -3.11 -m venv .venv`.)*  
-If PowerShell blocks script activation, run `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass` and re-activate, or call `.\.venv\Scripts\python.exe` directly.
-
----
-
-## Run tests
-
-```powershell
-pytest -q
-```
-
----
-
-## Software calibration phantom
-
-Run the digital test vector ($1.0\text{ mV}$, $60\text{ bpm}$, $360\text{ Hz}$, $10\text{ s}$, plus $+5\%$ gain perturbation check):
+### Functional & Mathematical Verification via Digital Reference Signals
 
 ```powershell
 python examples/run_digital_phantom.py
 ```
 
-The package provides `generate_1mv_60bpm_phantom()` and `evaluate_digital_phantom()` for a known digital pulse train. This checks software amplitude/time calculations. It is **not** a physical ECG simulator, is not traceable to SI, and cannot calibrate an ECG device.
+Verifies `0.0%` nominal amplitude/rate error on a $1.0\text{ mV}$, $60\text{ bpm}$ digital pulse train and exact `+5.0%` error detection under a $1.05\times$ scale perturbation. *(Checks software math only; not traceable to SI and does not calibrate physical ECG hardware).*
 
 ---
 
-## Run the 5-minute initial verification (Record 100)
+## Reproducible Experimental Workflows (CLI)
+
+### 1. Synthetic Perturbations + Tolerance Sweep + NN-HRV Jitter (`run`)
 
 ```powershell
+# Initial 5-minute verification on Record 100
 python -m ecg_integrity.cli run --record 100 --channel 0 --seconds 300
-```
 
-Outputs are saved under `results/record_100_ch0/`:
-
-- `metrics.csv` — Quantitative metrics across all 6 experimental conditions
-- `run_metadata.json` — Full QA/metrology audit & parameter traceability
-- `baseline.png`, `baseline_wander.png`, `mains_interference.png`, `white_noise_20dB.png`, `white_noise_10dB.png`, `white_noise_5dB.png`
-- `fig1_conditioning.png` — Figure 1: Original vs conditioned signal & integrated QRS energy
-- `fig2_perturbations.png` — Figure 2: Visual comparison of controlled interferences
-- `fig3_performance.png` / `metrics_summary.png` — Figure 3: Sensitivity, PPV, F1-score & $\text{MAE}_t$
-- `fig4_timing_error.png` — Figure 4: Signed & absolute QRS temporal localization error distributions
-
-Re-generate or customize the metrics summary plot:
-
-```powershell
-python examples/plot_metrics.py
-```
-
----
-
-## Run the 5-record full-duration pilot (~30 min per record)
-
-```powershell
+# 5-record 30-minute purposive stress-test pilot (10,789 reference beats)
 python -m ecg_integrity.cli run --record 100 --channel 0 --seconds 1800 --output results/pilot
 python -m ecg_integrity.cli run --record 101 --channel 0 --seconds 1800 --output results/pilot
 python -m ecg_integrity.cli run --record 103 --channel 0 --seconds 1800 --output results/pilot
@@ -138,60 +93,61 @@ python -m ecg_integrity.cli run --record 106 --channel 0 --seconds 1800 --output
 python examples/plot_pilot_summary.py --csv results/pilot/pilot_metrics.csv
 ```
 
+Automatically generates `metrics.csv`, `tolerance_sweep.csv` ($8.33\text{–}150\text{ ms}$), `morphology_stratified.csv`, `hrv_jitter_metrics.csv`, `run_metadata.json`, and Figures 1–4 + `fig_tolerance_sweep.png`.
+
+### 2. Real Physiological Acquisition Noise (`nstdb`: `bw`, `ma`, `em` across `24` to `-6 dB`)
+
+```powershell
+python -m ecg_integrity.cli nstdb --record 100 --channel 0 --seconds 1800
+```
+
+### 3. Morphology-Stratified & $\pm 300\text{ ms}$ False-Positive Diagnostics (`diagnose`)
+
+```powershell
+# Inspect all 33 False Positives (±300 ms multi-stage waveforms + THRESHOLD_I1) on Record 105
+python -m ecg_integrity.cli diagnose --record 105 --channel 0 --seconds 1800
+
+# Compare A_QRS, W_QRS, max|dV/dt|, and E_QRS/I1 across 512 TP vs 6 FN PVCs on Record 106 @ 5 dB
+python -m ecg_integrity.cli diagnose --record 106 --channel 0 --seconds 1800 --snr-db 5
+```
+
+### 4. Independent Detector Benchmark vs. WFDB `XQRS` (`benchmark`)
+
+```powershell
+python -m ecg_integrity.cli benchmark --record 100 --channel 0 --seconds 1800
+python -m ecg_integrity.cli benchmark --record 105 --channel 0 --seconds 1800
+python -m ecg_integrity.cli benchmark --record 106 --channel 0 --seconds 1800
+```
+
 ---
 
-## Verified Results & Diagnostic Figures
+## Key Empirical Highlights (`v0.2.0`)
 
-### 1. Software Calibration Phantom (`1.0 mV`, `60 bpm`, `360 Hz`)
-- **Nominal Pulse Train:** `10` pulses detected, **`0.0%` amplitude error**, **`0.0%` rate error**.
-- **Scale Sensitivity (`+5%` Gain Injection, `1.05 mV`):** **`+5.0%` measured amplitude error** ($E_A$).
+1. **Pooled Baseline Pilot (`10,789` beats across `100, 101, 103, 105, 106`):** `10,777 TP`, `37 FP`, `12 FN` (`Se = 99.89%`, `PPV = 99.66%`, `F1 = 99.77%`), with `33/37` FPs concentrated in motion-corrupted `Record 105`.
+2. **Core Thesis — F1 Stability Masks Temporal Jitter & HRV Bias (`Record 100`):** Across Baseline $\rightarrow 5\text{ dB}$ AWGN, `F1` remains `100.00%`, yet ensemble $\text{MAE}_t$ rises $+30.7\%$ ($1.50 \rightarrow 1.96\text{ ms}$), $\sigma_t$ rises $+56.0\%$ ($1.68 \rightarrow 2.62\text{ ms}$), and normal-to-normal `RMSSD` ($n=2,196$ pairs) inflates by $+2.54\%$ ($27.80 \rightarrow 28.51\text{ ms}$).
+3. **Matching-Window Sensitivity (`Record 106`):** Tightening tolerance from $\pm 150\text{ ms}$ to $\pm 8.33\text{ ms}$ ($\pm 3$ samples) reduces baseline F1 from `99.95%` to `95.79%` (`93.96%` at $5\text{ dB}$) due to R-peak fiducial dispersion across wide multiform PVCs.
+4. **Physical `NSTDB` vs. Synthetic Noise:** While stationary $0.25\text{ Hz}$ / $60\text{ Hz}$ sinusoids and `nstdb/bw` produce `0 FP` down to $-6\text{ dB}$, physical muscle (`nstdb/ma`) and electrode motion (`nstdb/em`) at $-6\text{ dB}$ trigger `127 FP` (`PPV = 94.68%`) and `171 FP` (`PPV = 92.97%`), respectively.
+5. **Biophysical Proof on `Record 106` Missed PVCs & `XQRS` Trade-off:** All `6` missed PVCs at $5\text{ dB}$ had $3.2\times$ lower slope ($18.6$ vs. $58.8\text{ mV/s}$) and $E_{\text{QRS}} / I_1 < 0.60$. Meanwhile, `WFDB XQRS` achieved tighter $\text{MAE}_t$ (`0.50 ms` on `100`) and fewer motion FPs on `105`, but missed `88` multiform PVCs on `106` (`Se = 95.65%` vs. `99.90%` for Custom Pan–Tompkins).
 
-### 2. Multi-Record 30-Minute Pilot Summary (`10,789` Expert Reference Beats)
-
-| Record | Profile | Baseline F1 / $\text{MAE}_t$ | Wander ($0.25\text{ Hz}$) F1 / $\text{MAE}_t$ | Mains ($60\text{ Hz}$) F1 / $\text{MAE}_t$ | AWGN $20\text{ dB}$ F1 / $\text{MAE}_t$ | AWGN $10\text{ dB}$ F1 / $\text{MAE}_t$ | AWGN $5\text{ dB}$ F1 / $\text{MAE}_t$ |
-| :---: | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| **`100`** | Clean sinus ($n=2265$) | 100.00% / 1.50 ms | 100.00% / 1.56 ms | 100.00% / 1.53 ms | 100.00% / 1.57 ms | 100.00% / 1.74 ms | 100.00% / 1.96 ms |
-| **`101`** | Baseline drift ($n=1860$) | 99.87% / 1.86 ms | 99.87% / 1.84 ms | 99.87% / 1.83 ms | 99.87% / 1.82 ms | 99.87% / 1.92 ms | 99.87% / 2.14 ms |
-| **`103`** | Clean sinus ($n=2078$) | 99.98% / 1.92 ms | 99.98% / 1.97 ms | 99.98% / 1.92 ms | 99.98% / 1.96 ms | 99.98% / 2.09 ms | 99.98% / 2.35 ms |
-| **`105`** | High-grade motion ($n=2565$) | 99.20% / 1.23 ms | 99.20% / 1.18 ms | 99.22% / 1.65 ms | 99.09% / 1.76 ms | 99.15% / 2.69 ms | 99.11% / **3.56 ms** |
-| **`106`** | Multiform PVCs ($n=2021$) | 99.95% / 2.36 ms | 99.95% / 2.38 ms | 99.95% / 2.80 ms | 99.95% / 2.83 ms | 99.90% / 3.58 ms | 99.75% / **4.27 ms** |
-
-### Key Figures (Record `100` & Multi-Record Pilot)
+### Diagnostic Visuals
 
 ![Figure 1 — Signal Conditioning & QRS Enhancement Pipeline](results/record_100_ch0/fig1_conditioning.png)
 
-![Figure 2 — Controlled Electrical & Physiological Perturbations](results/record_100_ch0/fig2_perturbations.png)
+![Sensitivity to Temporal Matching Window (Record 106)](results/pilot/record_106_ch0/fig_tolerance_sweep.png)
 
-![Figure 3 — QRS Detection Performance vs Interference](results/record_100_ch0/fig3_performance.png)
+![MIT-BIH Noise Stress Test (bw, ma, em)](results/nstdb/record_100_ch0/fig_nstdb_stress_test.png)
 
-![Figure 4 — QRS Temporal Localization Error Distribution](results/record_100_ch0/fig4_timing_error.png)
+![Record 105 Multi-Stage False Positive Inspection (±300 ms)](results/diagnostics/record_105_baseline/fig_fp_inspection_gallery.png)
 
-![Multi-Record Pilot Comparison](results/pilot/pilot_comparison.png)
+![Record 106 Biophysical PVC Feature Comparison (TP vs FN)](results/diagnostics/record_106_awgn_5dB/fig_morphology_tp_vs_fn.png)
+
+![Detector Benchmark: Custom Pan–Tompkins vs WFDB XQRS (Record 106)](results/benchmark/record_106_ch0/fig_benchmark_xqrs.png)
 
 ---
 
 ## Engineering & QA Documentation
 
-- [`docs/EXPERIMENTAL_PROTOCOL.md`](docs/EXPERIMENTAL_PROTOCOL.md) — Pre-specified experimental design, signal conditioning equations, and 3-tier verification protocol.
-- [`docs/LIMITATIONS_AND_QA_REPORT.md`](docs/LIMITATIONS_AND_QA_REPORT.md) — Empirical results analysis, failure modes under noise/arrhythmia, and metrological limitations.
-- [`docs/TECHNICAL_PUBLICATION_DRAFT.md`](docs/TECHNICAL_PUBLICATION_DRAFT.md) — Structured technical article summarizing methodology and empirical findings.
-- [`docs/REFERENCES.md`](docs/REFERENCES.md) — Dataset, algorithmic, and standards citations.
-
----
-
-## Dataset and citations
-
-The MIT-BIH Arrhythmia Database is open access under the Open Data Commons Attribution License v1.0. Cite both:
-
-- Moody GB, Mark RG. *MIT-BIH Arrhythmia Database (version 1.0.0).* PhysioNet. https://doi.org/10.13026/C2F305
-- Moody GB, Mark RG. The impact of the MIT-BIH Arrhythmia Database. *IEEE Eng Med Biol Mag.* 2001;20(3):45–50. https://doi.org/10.1109/51.932724
-
-Also cite the WFDB Python package when used: https://wfdb.io/software/python.html
-
----
-
-## Standards context
-
-ANSI/AAMI EC57:2012 (R2020) describes methods for testing and reporting performance of cardiac rhythm and ST-segment measurement algorithms. This project is **not** an implementation of the complete standard and does not claim conformity. Obtain and review the full standard before making any standards-compliance claim.
-
-IEC 60601-2-47:2012 concerns basic safety and essential performance of ambulatory ECG systems. It is useful background for device-specific context, but this software-only exercise does not assess electrical safety or conformity of an ECG device.
+- [`docs/EXPERIMENTAL_PROTOCOL.md`](docs/EXPERIMENTAL_PROTOCOL.md) — Complete Phase 1 & Phase 2 experimental design, tolerances, NSTDB SNR equations, and statistical structure.
+- [`docs/LIMITATIONS_AND_QA_REPORT.md`](docs/LIMITATIONS_AND_QA_REPORT.md) — Detailed tables for micro-aggregated counts, tolerance sweeps, NSTDB stress tests, FP/FN diagnostics, XQRS benchmark, and HRV jitter.
+- [`docs/TECHNICAL_PUBLICATION_DRAFT.md`](docs/TECHNICAL_PUBLICATION_DRAFT.md) — Manuscript draft: *"Beyond F1-Score: Evaluating Temporal Accuracy and Noise Sensitivity of a Pan–Tompkins-Inspired QRS Detection Pipeline"*.
+- [`docs/REFERENCES.md`](docs/REFERENCES.md) — Citations for MIT-BIH (`mitdb`), Noise Stress Test (`nstdb`), Pan–Tompkins, WFDB/`XQRS`, and standards context (ANSI/AAMI EC57, IEC 60601-2-47).

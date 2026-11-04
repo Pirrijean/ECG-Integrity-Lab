@@ -1,98 +1,75 @@
-# Experimental Protocol & Metrological QA Specification
+# Experimental Protocol & Verification Specification (`v0.2.0`)
 
-**Project:** ECG-Integrity-Lab (`v0.1.0`)  
+**Project:** ECG-Integrity-Lab (`v0.2.0`)  
 **Subtitle:** Open ECG Signal Conditioning & QRS Detector Verification Framework  
-**Document Type:** Pre-Specified Verification & Experimental Protocol  
+**Document Type:** Pre-Specified Experimental & Methodological Protocol  
 
 ---
 
-## 1. Research Objective & Technical Question
+## 1. Research Objective & Central Thesis
 
-The primary engineering question investigated in this protocol is:
+The central engineering thesis investigated by this framework is:
 
-> **How do controlled electrical interferences and broadband physiological/instrumentation noise degrade the beat-detection accuracy (Sensitivity, PPV, F1-score) and temporal localization precision ($\text{MAE}_t$) of a classical Pan–Tompkins-inspired QRS detection pipeline?**
+> **Beyond F1-Score: Beat-detection accuracy (Sensitivity, PPV, F1) can remain near-perfect while R-peak temporal localization precision ($\text{MAE}_t$, $\sigma_t$) and downstream time-domain HRV metrics (`RMSSD`) already undergo measurable degradation—and detection failure modes depend strongly on whether disturbances are synthetic out-of-band sinusoids, broadband noise, physical electrode motion, or multiform ventricular ectopy.**
 
-Rather than claiming clinical diagnostic validity from visual inspection, this protocol establishes a reproducible computer-based test bench combining **biomedical instrumentation principles**, **digital signal conditioning**, **metrological verification**, and **quantitative quality assurance (QA/QC)**.
-
----
-
-## 2. Dataset & Attribution
-
-- **Source Database:** MIT-BIH Arrhythmia Database (`mitdb`, v1.0.0), hosted on PhysioNet.
-- **Database Characteristics:**
-  - 48 two-channel ambulatory ECG recordings (~30 minutes each) obtained from **47 subjects** (records `201` and `202` originate from the same male subject; therefore, statistical independence across all 48 records must **not** be assumed).
-  - Sampling frequency: $f_s = 360\text{ Hz}$ ($\Delta t = \frac{1}{360}\text{ s} \approx 2.7778\text{ ms}$).
-  - Digitization resolution: 11-bit ADC over a $\pm 5\text{ mV}$ ($10\text{ mV}$ peak-to-peak) nominal range (`200` ADC counts/mV, digital baseline `1024` counts in standard records).
-  - Expert-reviewed reference annotations (`.atr`): ~110,000 beat annotations.
-- **License:** Open Data Commons Attribution License v1.0 (ODC-By v1.0). Full bibliographic attribution to Moody & Mark (2001) and PhysioNet is preserved in [`REFERENCES.md`](REFERENCES.md).
-
-### Staged Record Selection Plan
-
-| Stage | Scope | Selected Records | Engineering Rationale |
-| :--- | :--- | :--- | :--- |
-| **Level 1 — Initial Verification** | 1 record, first 300 s (5 min) | `100` (Channel 0, `MLII`) | End-to-end verification of WFDB retrieval, header QA, filtering, QRS localization, and controlled noise injection on clean normal sinus rhythm with occasional premature beats. |
-| **Level 2 — Multi-Record Pilot** | 5 full records (~1800 s / 30 min each) | `100`, `101`, `103`, `105`, `106` (Channel 0) | Practical engineering stress test across heterogeneous clinical/technical conditions: clean sinus (`100`, `103`), baseline drift/artifact (`101`), severe motion/noise artifacts (`105`), and frequent multiform premature ventricular contractions (`106`). *Note: pragmatic stress-test selection, not a random sample.* |
-| **Level 3 — Full Database Study** | All 48 records | `100`–`234` | Population-wide variability analysis accounting for subject clustering (47 subjects) and paced rhythms (`102`, `104`, `107`, `217`). |
+Rather than claiming that a classical detector is universally "robust", `ECG-Integrity-Lab` provides an open, reproducible computer-based bench to **characterize where, how, and why** an ECG signal-processing pipeline degrades.
 
 ---
 
-## 3. Three-Tier Verification & Quality Assurance Architecture
+## 2. Datasets & Attribution
 
-### Tier A — Software & Scale Verification (`digital_phantom.py`)
-
-Before analyzing physiological signals, the mathematical scaling and interval routines are verified against a deterministic digital calibration phantom:
-
-- **Nominal Vector:** Rectangular pulse train of amplitude $A_{\text{ref}} = 1.0\text{ mV}$, pulse width $100\text{ ms}$, rate $60.0\text{ bpm}$ ($T_{RR} = 1.0\text{ s}$), duration $10.0\text{ s}$, sampled at $f_s = 360\text{ Hz}$.
-- **Acceptance Criteria:**
-  - Detected pulse count $= 10$
-  - Amplitude error $E_A = \frac{A_{\text{measured}} - A_{\text{ref}}}{A_{\text{ref}}} \times 100\% = 0.0\%$
-  - Rate error $E_R = \frac{\text{BPM}_{\text{measured}} - \text{BPM}_{\text{ref}}}{\text{BPM}_{\text{ref}}} \times 100\% = 0.0\%$
-  - Perturbation sensitivity check: an injected $+5\%$ gain factor ($1.05\text{ mV}$) must be reported as $E_A = +5.0\%$.
-- **Negative / Fault-Injection Checks (`pytest`):** Explicit rejection (`ValueError`) of invalid sampling frequencies ($f_s \le 0$ or header mismatch), nonexistent channels, `NaN`/`Inf` samples, and uncalibrated raw ADC counts exceeding physiological millivolt limits ($|x| > 20\text{ mV}$).
-- **Metrological Disclaimer:** This digital test vector verifies software arithmetic only. It is **not** traceable to the International System of Units (SI), does not replace a physical calibrated ECG simulator, and does not verify hardware analog front-end gain.
-
-### Tier B — Data Integrity & Signal Processing Verification (`dataset.py`, `signal_processing.py`, `detector.py`)
-
-1. **Header & Calibration Audit (Step 9):**
-   - Confirm $f_s = 360\text{ Hz}$ and physical unit `mV`.
-   - Record header `adc_gain` (counts/mV), digital `baseline` (counts), and `adc_res` (bits). Never process raw ADC integers directly as millivolts.
-   - Filter `.atr` annotations strictly against standard PhysioNet QRS beat symbols (`N, L, R, B, A, a, J, S, V, r, F, e, j, n, E, /, f, Q, ?`), explicitly excluding rhythm labels (`+`), signal-quality markers (`~`), isolated artifacts (`|`), and non-conducted P-waves (`x`).
-2. **Signal Conditioning Filter (Step 11):**
-   - 4th-order Butterworth bandpass ($5\text{–}20\text{ Hz}$) implemented as cascaded second-order sections (`scipy.signal.butter(..., output='sos')`) and applied via zero-phase forward-backward filtering (`scipy.signal.sosfiltfilt`) for numerical stability and zero phase lag.
-   - **Bandwidth Scope Warning:** A $5\text{–}20\text{ Hz}$ passband maximizes QRS complex SNR while suppressing respiratory baseline drift and $60\text{ Hz}$ mains pickup, but it **attenuates P/T waves and distorts ST-segment morphology**. Outputs must never be used for diagnostic waveform or ischemia/ST interpretation.
-3. **Pan–Tompkins-Inspired QRS Detector Parameters (Step 12):**
-   - Numerical derivative: centered gradient $d[n]$.
-   - Nonlinear squaring: $e[n] = d[n]^2$.
-   - Moving-window integration: $M[n] = \frac{1}{N}\sum_{k=0}^{N-1} e[n-k]$ over a $120\text{ ms}$ window ($N = 43$ samples at $360\text{ Hz}$).
-   - Adaptive dual-threshold peak detection (`SPKI`, `NPKI`, `THRESHOLD_I1`, searchback `THRESHOLD_I2` at $1.66 \times \overline{RR}$) with $250\text{ ms}$ physiological refractory period ($90$ samples).
-   - QRS peak relocation: local extremum search within $\pm 90\text{ ms}$ ($\pm 32$ samples) enforcing $250\text{ ms}$ minimum inter-beat separation.
-
-### Tier C — Controlled Perturbations & Quantitative Evaluation (`evaluation.py`)
-
-Each ECG segment is evaluated across six controlled experimental conditions:
-
-| # | Scenario Key | Interference Type | Experimental Specification |
-| :-: | :--- | :--- | :--- |
-| 1 | `baseline` | Unperturbed reference | Calibrated physical ECG signal $x[n]$ |
-| 2 | `baseline_wander` | Respiratory / motion drift | Sinusoidal $0.20\text{ mV}$ peak at $0.25\text{ Hz}$ |
-| 3 | `mains_interference` | Power-line hum | Sinusoidal $0.05\text{ mV}$ peak at $60.0\text{ Hz}$ |
-| 4 | `white_noise_20dB` | Broadband Gaussian noise | Zero-mean AWGN at $\text{SNR} = 20\text{ dB}$ (`seed=42`) |
-| 5 | `white_noise_10dB` | Broadband Gaussian noise | Zero-mean AWGN at $\text{SNR} = 10\text{ dB}$ (`seed=42`) |
-| 6 | `white_noise_5dB` | Broadband Gaussian noise | Zero-mean AWGN at $\text{SNR} = 5\text{ dB}$ (`seed=42`) |
-
-Signal-to-noise ratio is referenced to AC signal variance $P_s = \text{Var}(x)$ so static DC offsets cannot bias injected noise amplitude:
-$$P_n = \frac{\text{Var}(x)}{10^{\text{SNR}_{\text{dB}} / 10}}, \qquad \sigma_n = \sqrt{P_n}$$
-
-#### One-to-One Beat Matching & Performance Metrics
-
-- **Matching Window:** $\pm 150\text{ ms}$ ($\pm 54$ samples at $360\text{ Hz}$), using greedy minimum-distance **strict one-to-one assignment** so multiple detections near a single beat cannot inflate True Positives.
-- **Classification & Timing Metrics:**
-  $$\text{Sensitivity (Se)} = \frac{TP}{TP + FN}, \qquad \text{PPV} = \frac{TP}{TP + FP}, \qquad F_1 = \frac{2 \cdot \text{Se} \cdot \text{PPV}}{\text{Se} + \text{PPV}}$$
-  $$\text{MAE}_t = \frac{1}{N_{TP}} \sum_{i=1}^{N_{TP}} |t_{\text{det}, i} - t_{\text{ref}, i}| \quad [\text{ms}]$$
+1. **MIT-BIH Arrhythmia Database (`mitdb`, v1.0.0 — PhysioNet):**
+   - 48 two-channel ambulatory recordings (~30 min each) from **47 subjects** (`201` and `202` belong to the same patient; records are therefore **not** statistically independent across all 48 files).
+   - $f_s = 360\text{ Hz}$ ($\Delta t = \frac{1}{360}\text{ s} \approx 2.7778\text{ ms}$), 11-bit ADC over $\pm 5\text{ mV}$ (`200 counts/mV`, digital baseline `1024`).
+   - Five-record purposive stress-test pilot (`100`, `101`, `103`, `105`, `106`; `10,789` true reference beats): selected deliberately to contrast clean sinus rhythm (`100`, `103`), mild drift/artifact (`101`), severe motion/artifact (`105`), and frequent multiform PVCs (`106`). *Not a random sample of MIT-BIH.*
+2. **MIT-BIH Noise Stress Test Database (`nstdb`, v1.0.0 — PhysioNet):**
+   - Physical ambulatory noise recordings ($f_s = 360\text{ Hz}$, `mV`) acquired from active volunteers with electrodes placed on the limbs/thorax where ECG is absent:
+     - `bw`: physical baseline wander
+     - `ma`: physical muscle (EMG) artifact
+     - `em`: physical electrode motion artifact
 
 ---
 
-## 4. Regulatory & Standards Context
+## 3. Verification Architecture & Methodological Conventions
 
-- **ANSI/AAMI EC57:2012 (R2020)** (*Testing and reporting performance results of cardiac rhythm and ST segment measurement algorithms*) provides industry context for beat-by-beat evaluation windows and performance reporting. This open framework implements an educational/research beat-matching evaluator inspired by those principles; it is **not** a complete implementation of ANSI/AAMI EC57 (e.g., it omits the standard's 5-minute learning-period exclusion rules, ventricular flutter episode handling, and multi-database mandatory test sets) and **claims no regulatory conformity**.
-- **IEC 60601-2-47:2012** addresses basic safety and essential performance of ambulatory electrocardiographic systems (hardware + embedded firmware). Because `ECG-Integrity-Lab` is a purely offline software pipeline without patient-connected hardware, electrical safety and medical-device essential performance conformity are outside its scope.
+### 3.1 Functional and Mathematical Verification via Digital Reference Signals (`digital_phantom.py`)
+- Uses a deterministic synthetic rectangular pulse train ($1.0\text{ mV}$, $60.0\text{ bpm}$, $100\text{ ms}$ width, $10\text{ s}$ at $360\text{ Hz}$) plus a $+5\%$ gain perturbation ($1.05\text{ mV} \rightarrow E_A = +5.0\%$).
+- **Terminology Precision:** This is a **functional and mathematical software verification test**, *not* a metrological hardware calibration. It does not verify an electrocardiograph's analog front-end, ADC linearity, or traceability to SI units.
+
+### 3.2 Temporal Resolution vs. Ensemble $\text{MAE}_t$ & Signed Error Convention (`evaluation.py`)
+- **Discrete Sampling Resolution:** Because `detect_qrs_pan_tompkins` outputs integer sample indices at $f_s = 360\text{ Hz}$, the discrete resolution of any single beat detection is $\Delta t = 2.7778\text{ ms}$. Ensemble averages such as $\text{MAE}_t = 1.17\text{ ms}$ or $1.50\text{ ms}$ arise mathematically from averaging discrete sample offsets ($0, \pm 1, \pm 2, \dots$ samples) across hundreds or thousands of beats; they must **never** be interpreted as sub-sample single-beat resolution unless explicit sub-sample interpolation (`refine_peaks_parabolic`) is enabled and independently validated.
+- **Signed Timing Error Convention:**
+  $$e_i = t_{\text{det}, i} - t_{\text{ref}, i} = \frac{n_{\text{det}, i} - n_{\text{ref}, i}}{f_s}$$
+  A **positive** `mean_signed_error_ms` indicates that detections occur systematically *after* the expert `.atr` fiducial mark; a **negative** value indicates detections *precede* the reference.
+
+### 3.3 Sensitivity to Temporal Matching Window (Experiment 1)
+Reporting only a permissive $\pm 150\text{ ms}$ ($\pm 54$ samples) window can mask large fiducial shifts. Every evaluation therefore computes strict **one-to-one beat matching** across six tolerances:
+
+| Tolerance ($\pm\text{ms}$) | Samples at $360\text{ Hz}$ | Interpretation |
+| :---: | :---: | :--- |
+| `±8.33 ms` | `3` | Strict R-peak fiducial precision ($\le 3$ samples) |
+| `±16.67 ms` | `6` | Tight HRV-grade R-peak alignment |
+| `±25.0 ms` | `9` | Narrow QRS half-width window |
+| `±50.0 ms` | `18` | Moderate QRS complex width window |
+| `±100.0 ms` | `36` | Wide ectopic QRS tolerance |
+| `±150.0 ms` | `54` | Primary beat-presence tolerance (reference benchmark) |
+
+### 3.4 Real Physiological Noise Mixing Protocol (Experiment 2 — `nstdb.py`)
+Clean ECG $x[n]$ and zero-mean physical noise $n_0[n] = n[n] - \bar{n}$ are combined at target $\text{SNR} \in \{24, 18, 12, 6, 0, -6\}\text{ dB}$ while preserving original `.atr` beat timestamps:
+$$x_{\text{noisy}}[n] = x[n] + \alpha \, n_0[n], \qquad \alpha = \sqrt{\frac{P_x}{P_n \cdot 10^{\text{SNR}_{\text{dB}} / 10}}}$$
+where $P_x = \text{Var}(x)$ and $P_n = \text{Var}(n_0)$ are computed over the exact aligned recording segment.
+
+### 3.5 Morphology-Stratified & Biophysical Error Diagnostics (Experiment 3 — `error_analysis.py`)
+- Stratifies Sensitivity and $\text{MAE}_t$ by PhysioNet beat symbol (`N`, `A`, `V`, `Q`).
+- Extracts four biophysical/signal parameters around every reference beat ($\pm 80\text{ ms}$): peak-to-peak amplitude $A_{\text{QRS}}$, filtered half-maximum width $W_{\text{QRS}}$, peak slope $\max |dV/dt|$, and moving-window integrated energy $E_{\text{QRS}}$ relative to the local adaptive threshold `THRESHOLD_I1`.
+- Extracts $\pm 300\text{ ms}$ multi-stage windows (raw, $5\text{–}20\text{ Hz}$ filtered, derivative $d[n]$, integrated $M[n]$ + `THRESHOLD_I1`) around False Positives and cross-references auxiliary `.atr` markers (`~`, `|`, `+`).
+
+### 3.6 Independent Detector Benchmark (Experiment 4 — `benchmark.py`)
+Compares `detect_qrs_pan_tompkins` against `wfdb.processing.xqrs_detect` (`learn=True`) on identical signals, reference annotations, and tolerance sweeps. *(Note: both operate on the $5\text{–}20\text{ Hz}$ QRS band, isolating differences between derivative-squared moving average + dual Pan–Tompkins thresholds vs. XQRS Ricker-wavelet envelope integration and learning thresholds).*
+
+### 3.7 Time-Domain HRV Localization-Jitter Propagation (`hrv.py`)
+Isolates verified consecutive normal sinus (`N`–`N`) TP beat pairs ($300\text{ ms} \le RR_i \le 2000\text{ ms}$), excluding ectopic (`A`, `V`, `Q`) and missed/spurious transitions, to quantify how timing errors $RR_i' = RR_i + e_{i+1} - e_i$ bias `RMSSD` and `SDNN`.
+
+### 3.8 Statistical Structure & Aggregation Rules
+- **Micro-Aggregation vs. Macro-Averaging:** Pooled baseline metrics sum `TP`, `FP`, and `FN` across records before computing Sensitivity, PPV, and F1 (`compute_micro_aggregated_metrics`), rather than averaging per-record percentages of unequal beat counts.
+- **Repeated Measures Warning:** Evaluating $10,789$ beats under $6$ perturbation conditions yields $64,734$ *evaluation opportunities*, **not** $64,734$ independent observations. Future confidence intervals must use paired differences clustered by record/subject (47 unique subjects across the 48 MIT-BIH records).

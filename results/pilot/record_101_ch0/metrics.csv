@@ -1,7 +1,7 @@
-record,channel,channel_name,duration_s,scenario_key,scenario,condition,n_ref,n_det,tp,fp,fn,sensitivity,ppv,f1_score,mae_ms,mean_signed_error_ms,std_error_ms,median_abs_error_ms,max_abs_error_ms,tolerance_ms
-101,0,MLII,1800.0,baseline,Baseline,Original signal,1860,1863,1859,4,1,0.999462,0.997853,0.998657,1.8648,-1.8618,2.5026,2.7778,91.6667,150.0
-101,0,MLII,1800.0,baseline_wander,Baseline wander,"0.20 mV, 0.25 Hz",1860,1863,1859,4,1,0.999462,0.997853,0.998657,1.8409,-1.8379,2.507,2.7778,91.6667,150.0
-101,0,MLII,1800.0,mains_interference,Mains interference,"0.05 mV, 60 Hz",1860,1863,1859,4,1,0.999462,0.997853,0.998657,1.8349,-1.823,2.5046,2.7778,91.6667,150.0
-101,0,MLII,1800.0,white_noise_20dB,White noise (20 dB),AWGN 20 dB SNR,1860,1863,1859,4,1,0.999462,0.997853,0.998657,1.8185,-1.8185,2.5285,2.7778,91.6667,150.0
-101,0,MLII,1800.0,white_noise_10dB,White noise (10 dB),AWGN 10 dB SNR,1860,1863,1859,4,1,0.999462,0.997853,0.998657,1.9246,-1.823,2.7252,2.7778,91.6667,150.0
-101,0,MLII,1800.0,white_noise_5dB,White noise (5 dB),AWGN 5 dB SNR,1860,1863,1859,4,1,0.999462,0.997853,0.998657,2.1412,-1.8215,2.9884,2.7778,91.6667,150.0
+record,channel,channel_name,duration_s,scenario_key,scenario,condition,n_ref,n_det,tp,fp,fn,sensitivity,ppv,f1_score,mae_ms,mean_signed_error_ms,std_error_ms,median_abs_error_ms,max_abs_error_ms,tolerance_ms,sampling_interval_ms
+101,0,MLII,1800.0,baseline,Baseline,Original signal,1860,1863,1859,4,1,0.999462,0.997853,0.998657,1.8648,-1.8618,2.5026,2.7778,91.6667,150.0,2.7778
+101,0,MLII,1800.0,baseline_wander,Baseline wander,"0.20 mV, 0.25 Hz",1860,1863,1859,4,1,0.999462,0.997853,0.998657,1.8409,-1.8379,2.507,2.7778,91.6667,150.0,2.7778
+101,0,MLII,1800.0,mains_interference,Mains interference,"0.05 mV, 60 Hz",1860,1863,1859,4,1,0.999462,0.997853,0.998657,1.8349,-1.823,2.5046,2.7778,91.6667,150.0,2.7778
+101,0,MLII,1800.0,white_noise_20dB,White noise (20 dB),AWGN 20 dB SNR,1860,1863,1859,4,1,0.999462,0.997853,0.998657,1.8185,-1.8185,2.5285,2.7778,91.6667,150.0,2.7778
+101,0,MLII,1800.0,white_noise_10dB,White noise (10 dB),AWGN 10 dB SNR,1860,1863,1859,4,1,0.999462,0.997853,0.998657,1.9246,-1.823,2.7252,2.7778,91.6667,150.0,2.7778
+101,0,MLII,1800.0,white_noise_5dB,White noise (5 dB),AWGN 5 dB SNR,1860,1863,1859,4,1,0.999462,0.997853,0.998657,2.1412,-1.8215,2.9884,2.7778,91.6667,150.0,2.7778

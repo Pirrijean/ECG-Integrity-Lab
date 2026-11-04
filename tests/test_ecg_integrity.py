@@ -151,3 +151,83 @@ def test_detector_recovers_synthetic_qrs_train() -> None:
     assert eval_res.sensitivity == pytest.approx(1.0)
     assert eval_res.ppv == pytest.approx(1.0)
     assert eval_res.mae_ms < 5.0
+
+
+def test_tolerance_sweep_is_monotonically_non_decreasing() -> None:
+    """Experiment 1: widening the 1-to-1 matching tolerance must never decrease TP or F1."""
+    fs = 360.0
+    ref_peaks = np.array([360, 720, 1080, 1440], dtype=np.int64)
+    # Offsets: +1 sample (2.78 ms), +5 samples (13.89 ms), +15 samples (41.67 ms), +45 samples (125.0 ms)
+    det_peaks = np.array([361, 725, 1095, 1485], dtype=np.int64)
+
+    from ecg_integrity.evaluation import evaluate_tolerance_sweep
+
+    sweep = evaluate_tolerance_sweep(ref_peaks, det_peaks, fs=fs)
+    tps = [row["tp"] for row in sweep]
+    assert tps == [1, 2, 2, 3, 3, 4]
+
+
+def test_micro_aggregated_metrics_pools_counts_rather_than_averaging_ratios() -> None:
+    """Section 1: verify pooled count aggregation differs from naive macro-average of percentages."""
+    import pandas as pd
+    from ecg_integrity.evaluation import compute_micro_aggregated_metrics
+
+    df = pd.DataFrame(
+        [
+            {"scenario_key": "baseline", "scenario": "Baseline", "condition": "Orig", "n_ref": 1000, "n_det": 1000, "tp": 1000, "fp": 0, "fn": 0},
+            {"scenario_key": "baseline", "scenario": "Baseline", "condition": "Orig", "n_ref": 100, "n_det": 100, "tp": 90, "fp": 10, "fn": 10},
+        ]
+    )
+    agg = compute_micro_aggregated_metrics(df)
+    assert int(agg.loc[0, "tp"]) == 1090
+    assert agg.loc[0, "sensitivity"] == pytest.approx(1090 / 1100, rel=1e-5)
+
+
+def test_real_noise_snr_mixer_achieves_target_snr() -> None:
+    """Experiment 2: verify alpha scaling formula produces exact empirical SNR."""
+    from ecg_integrity.nstdb import mix_ecg_with_real_noise
+
+    fs = 360.0
+    t = np.arange(int(20 * fs), dtype=np.float64) / fs
+    clean = 0.7 * np.sin(2.0 * np.pi * 8.0 * t) - 0.25
+    rng = np.random.default_rng(7)
+    phys_noise = 1.5 * np.sin(2.0 * np.pi * 0.4 * t) + rng.normal(0.0, 0.3, size=t.size)
+
+    mixed, meta = mix_ecg_with_real_noise(clean, phys_noise, snr_db=6.0, fs=fs)
+    assert mixed.shape == clean.shape
+    assert meta["empirical_snr_db"] == pytest.approx(6.0, abs=1e-3)
+
+
+def test_stratification_by_beat_symbol_separates_normal_and_pvc() -> None:
+    """Experiment 3: verify symbol-level TP/FN stratification."""
+    from ecg_integrity.error_analysis import stratify_by_beat_symbol
+
+    ref = np.array([200, 560, 920, 1280], dtype=np.int64)
+    symbols = ["N", "N", "V", "V"]
+    det = np.array([200, 561, 920], dtype=np.int64)  # Second 'V' at 1280 is missed
+
+    eval_res = match_beats_one_to_one(ref, det, fs=360.0, tolerance_ms=150.0)
+    sym_df = stratify_by_beat_symbol(symbols, eval_res).set_index("symbol")
+    assert sym_df.loc["N", "sensitivity"] == pytest.approx(1.0)
+    assert sym_df.loc["V", "sensitivity"] == pytest.approx(0.5)
+
+
+def test_nn_hrv_jitter_excludes_ectopic_beats_and_quantifies_rmssd_bias() -> None:
+    """Section 7: verify ectopic intervals are excluded and timing jitter inflates RMSSD."""
+    from ecg_integrity.hrv import evaluate_nn_hrv_jitter_impact
+
+    fs = 360.0
+    # Perfectly regular 1.0 s intervals (RMSSD_ref = 0.0 ms), with one 'V' beat in the middle
+    ref = np.arange(360, 360 * 10, 360, dtype=np.int64)
+    symbols = ["N", "N", "N", "N", "V", "N", "N", "N", "N"]
+    # Inject alternating ±1 sample jitter on detections
+    jitter = np.array([1, -1, 1, -1, 0, 1, -1, 1, -1], dtype=np.int64)
+    det = ref + jitter
+
+    eval_res = match_beats_one_to_one(ref, det, fs=fs, tolerance_ms=150.0)
+    hrv = evaluate_nn_hrv_jitter_impact(ref, symbols, eval_res, fs=fs)
+    # 9 beats -> 8 total intervals, minus the 2 intervals touching 'V' at index 4 -> 6 valid NN intervals
+    assert hrv["n_nn_intervals"] == 6
+    assert hrv["rmssd_ref_ms"] == pytest.approx(0.0, abs=1e-6)
+    assert hrv["rmssd_det_ms"] > 8.0
+

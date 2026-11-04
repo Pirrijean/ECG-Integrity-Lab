@@ -1,0 +1,15 @@
+record,detector,scenario_key,scenario,condition,n_ref,n_det,tp,fp,fn,sensitivity,ppv,f1_score,mae_ms,mean_signed_error_ms,std_error_ms,median_abs_error_ms,max_abs_error_ms,tolerance_ms,sampling_interval_ms
+106,Pan-Tompkins (Custom),baseline,Baseline,Original signal,2021,2019,2019,0,2,0.99901,1.0,0.999505,2.3582,0.0523,6.583,0.0,58.3333,150.0,2.7778
+106,WFDB XQRS,baseline,Baseline,Original signal,2021,1933,1933,0,88,0.956457,1.0,0.977744,1.2473,0.6582,5.0526,0.0,47.2222,150.0,2.7778
+106,Pan-Tompkins (Custom),baseline_wander,Baseline wander,"0.20 mV, 0.25 Hz",2021,2019,2019,0,2,0.99901,1.0,0.999505,2.3815,0.1582,6.5746,0.0,58.3333,150.0,2.7778
+106,WFDB XQRS,baseline_wander,Baseline wander,"0.20 mV, 0.25 Hz",2021,1933,1933,0,88,0.956457,1.0,0.977744,1.2473,0.6582,5.0526,0.0,47.2222,150.0,2.7778
+106,Pan-Tompkins (Custom),mains_interference,Mains interference,"0.05 mV, 60 Hz",2021,2019,2019,0,2,0.99901,1.0,0.999505,2.8025,0.227,6.6638,2.7778,58.3333,150.0,2.7778
+106,WFDB XQRS,mains_interference,Mains interference,"0.05 mV, 60 Hz",2021,1933,1933,0,88,0.956457,1.0,0.977744,1.2473,0.6582,5.0526,0.0,47.2222,150.0,2.7778
+106,Pan-Tompkins (Custom),white_noise_20dB,White noise (20 dB),AWGN 20 dB SNR,2021,2019,2019,0,2,0.99901,1.0,0.999505,2.8259,0.1816,6.7544,2.7778,55.5556,150.0,2.7778
+106,WFDB XQRS,white_noise_20dB,White noise (20 dB),AWGN 20 dB SNR,2021,1932,1932,0,89,0.955962,1.0,0.977485,1.2322,0.6254,4.9127,0.0,41.6667,150.0,2.7778
+106,Pan-Tompkins (Custom),white_noise_10dB,White noise (10 dB),AWGN 10 dB SNR,2021,2017,2017,0,4,0.998021,1.0,0.999009,3.5821,0.2162,7.0756,2.7778,55.5556,150.0,2.7778
+106,WFDB XQRS,white_noise_10dB,White noise (10 dB),AWGN 10 dB SNR,2021,1930,1930,0,91,0.954973,1.0,0.976968,1.4882,0.7052,5.4735,0.0,44.4444,150.0,2.7778
+106,Pan-Tompkins (Custom),white_noise_5dB,White noise (5 dB),AWGN 5 dB SNR,2021,2019,2015,4,6,0.997031,0.998019,0.997525,4.2721,0.2385,8.0518,2.7778,122.2222,150.0,2.7778
+106,WFDB XQRS,white_noise_5dB,White noise (5 dB),AWGN 5 dB SNR,2021,1950,1928,22,93,0.953983,0.988718,0.97104,2.1309,0.6469,8.4659,0.0,141.6667,150.0,2.7778
+106,Pan-Tompkins (Custom),nstdb_em_6dB,Real EM (6 dB),NSTDB Electrode Motion 6 dB,2021,2024,2015,9,6,0.997031,0.995553,0.996292,2.4607,0.2357,6.5303,0.0,55.5556,150.0,2.7778
+106,WFDB XQRS,nstdb_em_6dB,Real EM (6 dB),NSTDB Electrode Motion 6 dB,2021,1937,1933,4,88,0.956457,0.997935,0.976756,1.312,0.6222,5.0678,0.0,47.2222,150.0,2.7778

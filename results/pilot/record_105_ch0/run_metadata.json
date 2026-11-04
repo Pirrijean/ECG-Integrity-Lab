@@ -1,7 +1,7 @@
 {
-  "generated_at_utc": "2026-11-04T04:08:14.408457+00:00",
+  "generated_at_utc": "2026-11-04T05:02:30.788620+00:00",
   "framework": "ECG-Integrity-Lab",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "environment": {
     "python_version": "3.12.10",
     "platform": "Windows-11-10.0.26200-SP0",
@@ -11,7 +11,7 @@
     "matplotlib_version": "3.11.2",
     "wfdb_version": "4.3.1"
   },
-  "software_verification_phantom": {
+  "functional_digital_reference_verification": {
     "pulse_count": 10,
     "expected_amplitude_mv": 1.0,
     "observed_amplitude_mv": 1.0,
@@ -73,8 +73,17 @@
   },
   "evaluation_protocol": {
     "matching_algorithm": "Greedy closest-pair strict one-to-one beat matching",
-    "tolerance_ms": 150.0,
-    "tolerance_samples": 54,
+    "signed_error_convention": "e_i = t_det,i - t_ref,i (positive = detection lags behind reference)",
+    "discrete_sampling_interval_ms": 2.7778,
+    "primary_tolerance_ms": 150.0,
+    "tolerance_sweep_ms": [
+      8.33,
+      16.67,
+      25.0,
+      50.0,
+      100.0,
+      150.0
+    ],
     "random_seed": 42,
     "scenarios": [
       {

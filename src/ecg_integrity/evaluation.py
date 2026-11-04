@@ -1,14 +1,22 @@
 """Quantitative QRS detection evaluator with strict one-to-one beat matching.
 
-Implements Steps 13 and 14:
-- One-to-one temporal matching within a declared tolerance window (default 150 ms).
+Implements:
+- Strict one-to-one temporal matching within a declared tolerance window.
 - Sensitivity (Se), Positive Predictive Value (PPV), F1-score, and Mean Absolute
   Temporal Error (MAE_t in ms).
+- Multi-window temporal tolerance sweep (8.33, 16.67, 25, 50, 100, 150 ms).
+- Micro-aggregated count summarization across multiple records.
 
-Note on standards context:
-ANSI/AAMI EC57:2012 (R2020) describes methods for evaluating and reporting cardiac
-rhythm algorithms. This module implements a documented one-to-one beat matching
-protocol for research/QA verification and does NOT claim full conformity to EC57.
+Important methodological conventions:
+1. Signed timing error convention:
+       e_i = t_det,i - t_ref,i = (sample_det,i - sample_ref,i) / fs
+   A positive value indicates that the detected peak occurs AFTER the expert
+   reference annotation; a negative value indicates it precedes the reference.
+2. Discrete sampling interval vs. ensemble MAE_t:
+   At fs = 360 Hz, individual integer-sample detections have a discrete resolution
+   of Δt = 1 / 360 s ≈ 2.7778 ms. Values of MAE_t < 2.78 ms represent the arithmetic
+   mean of discrete errors (including 0-sample offsets) across many beats, NOT
+   sub-sample resolution of single detections.
 """
 
 from __future__ import annotations
@@ -17,6 +25,10 @@ from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
+import pandas as pd
+
+# Standard temporal matching tolerances (ms) corresponding to 3, 6, 9, 18, 36, and 54 samples at 360 Hz
+DEFAULT_TOLERANCES_MS: tuple[float, ...] = (8.33, 16.67, 25.0, 50.0, 100.0, 150.0)
 
 
 @dataclass(frozen=True)
@@ -37,10 +49,13 @@ class BeatEvaluationResult:
     median_abs_error_ms: float
     max_abs_error_ms: float
     tolerance_ms: float
+    sampling_interval_ms: float
     matched_ref_samples: np.ndarray
     matched_det_samples: np.ndarray
+    matched_ref_indices: np.ndarray
     timing_errors_ms: np.ndarray
     unmatched_ref_samples: np.ndarray
+    unmatched_ref_indices: np.ndarray
     unmatched_det_samples: np.ndarray
 
     def to_metrics_dict(self) -> dict[str, Any]:
@@ -66,6 +81,7 @@ class BeatEvaluationResult:
                 round(self.max_abs_error_ms, 4) if np.isfinite(self.max_abs_error_ms) else np.nan
             ),
             "tolerance_ms": round(self.tolerance_ms, 2),
+            "sampling_interval_ms": round(self.sampling_interval_ms, 4),
         }
 
 
@@ -75,22 +91,28 @@ def match_beats_one_to_one(
     fs: float,
     tolerance_ms: float = 150.0,
 ) -> BeatEvaluationResult:
-    """Compare detected QRS peaks against expert reference annotations (1-to-1).
+    """Compare detected QRS peaks against expert reference annotations (strict 1-to-1).
 
-    Candidate (reference, detection) pairs within ``tolerance_ms`` are ranked by
-    increasing absolute temporal distance ``|t_det - t_ref|`` and assigned greedily
-    so that each reference beat and each detected peak can participate in at most
-    one True Positive match.
+    Preserves the original sorted reference indices so callers can stratify TP/FN
+    by beat morphology symbol (e.g., N, A, V, Q).
     """
     if not np.isfinite(fs) or fs <= 0.0:
         raise ValueError(f"Sampling frequency 'fs' must be finite and > 0 Hz; got {fs!r}.")
     if not np.isfinite(tolerance_ms) or tolerance_ms < 0.0:
         raise ValueError(f"tolerance_ms must be finite and >= 0; got {tolerance_ms!r}.")
 
-    ref = np.unique(np.asarray(ref_peaks, dtype=np.int64))
-    det = np.unique(np.asarray(det_peaks, dtype=np.int64))
+    ref_raw = np.asarray(ref_peaks, dtype=np.int64)
+    ref_order = np.argsort(ref_raw, kind="mergesort")
+    ref = ref_raw[ref_order]
+    # Deduplicate exact sample collisions if any while retaining original index mapping
+    if ref.size > 1:
+        unique_mask = np.concatenate(([True], np.diff(ref) != 0))
+        ref = ref[unique_mask]
+        ref_order = ref_order[unique_mask]
 
+    det = np.unique(np.asarray(det_peaks, dtype=np.int64))
     tol_samples = int(round((tolerance_ms / 1000.0) * fs))
+    dt_ms = 1000.0 / float(fs)
 
     candidates: list[tuple[int, int, int]] = []
     if ref.size > 0 and det.size > 0:
@@ -118,10 +140,12 @@ def match_beats_one_to_one(
     matched_pairs.sort(key=lambda pair: pair[0])
 
     if matched_pairs:
-        m_ref_idx = np.array([p[0] for p in matched_pairs], dtype=np.int64)
-        m_det_idx = np.array([p[1] for p in matched_pairs], dtype=np.int64)
-        matched_ref = ref[m_ref_idx]
-        matched_det = det[m_det_idx]
+        m_ref_local = np.array([p[0] for p in matched_pairs], dtype=np.int64)
+        m_det_local = np.array([p[1] for p in matched_pairs], dtype=np.int64)
+        matched_ref = ref[m_ref_local]
+        matched_det = det[m_det_local]
+        matched_orig_indices = ref_order[m_ref_local]
+        # Signed error convention: e_i = t_det,i - t_ref,i
         timing_errors_ms = ((matched_det - matched_ref).astype(np.float64) / fs) * 1000.0
         abs_errors_ms = np.abs(timing_errors_ms)
         mae_ms = float(np.mean(abs_errors_ms))
@@ -132,6 +156,7 @@ def match_beats_one_to_one(
     else:
         matched_ref = np.empty(0, dtype=np.int64)
         matched_det = np.empty(0, dtype=np.int64)
+        matched_orig_indices = np.empty(0, dtype=np.int64)
         timing_errors_ms = np.empty(0, dtype=np.float64)
         mae_ms = float("nan")
         mean_signed_ms = float("nan")
@@ -140,6 +165,7 @@ def match_beats_one_to_one(
         max_abs_ms = float("nan")
 
     unmatched_ref = ref[~ref_used]
+    unmatched_orig_indices = ref_order[~ref_used]
     unmatched_det = det[~det_used]
 
     tp = int(matched_ref.size)
@@ -169,9 +195,58 @@ def match_beats_one_to_one(
         median_abs_error_ms=median_abs_ms,
         max_abs_error_ms=max_abs_ms,
         tolerance_ms=float(tolerance_ms),
+        sampling_interval_ms=dt_ms,
         matched_ref_samples=matched_ref,
         matched_det_samples=matched_det,
+        matched_ref_indices=matched_orig_indices,
         timing_errors_ms=timing_errors_ms,
         unmatched_ref_samples=unmatched_ref,
+        unmatched_ref_indices=unmatched_orig_indices,
         unmatched_det_samples=unmatched_det,
     )
+
+
+def evaluate_tolerance_sweep(
+    ref_peaks: np.ndarray | list[int],
+    det_peaks: np.ndarray | list[int],
+    fs: float,
+    tolerances_ms: tuple[float, ...] | list[float] = DEFAULT_TOLERANCES_MS,
+) -> list[dict[str, Any]]:
+    """Evaluate strict 1-to-1 detection performance across multiple temporal tolerances.
+
+    Addresses Experiment 1 (sensitivity of Se, PPV, and F1 to the matching window).
+    """
+    rows: list[dict[str, Any]] = []
+    for tol_ms in tolerances_ms:
+        tol_samples = int(round((float(tol_ms) / 1000.0) * fs))
+        res = match_beats_one_to_one(ref_peaks=ref_peaks, det_peaks=det_peaks, fs=fs, tolerance_ms=float(tol_ms))
+        rows.append(
+            {
+                "tolerance_ms": round(float(tol_ms), 2),
+                "tolerance_samples": tol_samples,
+                **res.to_metrics_dict(),
+            }
+        )
+    return rows
+
+
+def compute_micro_aggregated_metrics(metrics_df: pd.DataFrame) -> pd.DataFrame:
+    """Aggregate TP, FP, FN, and N_ref counts across records by scenario (micro-averaging).
+
+    Prevents confusing unweighted averages of per-record percentages with true
+    pooled count-based Sensitivity, PPV, and F1-score.
+    """
+    grouped = (
+        metrics_df.groupby(["scenario_key", "scenario", "condition"], sort=False, as_index=False)[
+            ["n_ref", "n_det", "tp", "fp", "fn"]
+        ]
+        .sum()
+    )
+    se = np.where((grouped["tp"] + grouped["fn"]) > 0, grouped["tp"] / (grouped["tp"] + grouped["fn"]), 0.0)
+    ppv = np.where((grouped["tp"] + grouped["fp"]) > 0, grouped["tp"] / (grouped["tp"] + grouped["fp"]), 0.0)
+    f1 = np.where((se + ppv) > 0, 2.0 * se * ppv / (se + ppv), 0.0)
+
+    grouped["sensitivity"] = np.round(se, 6)
+    grouped["ppv"] = np.round(ppv, 6)
+    grouped["f1_score"] = np.round(f1, 6)
+    return grouped

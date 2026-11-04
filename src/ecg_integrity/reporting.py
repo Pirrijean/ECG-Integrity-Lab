@@ -450,3 +450,198 @@ def save_run_metadata_json(
     }
     out_file.write_text(json.dumps(enriched, indent=2, ensure_ascii=False), encoding="utf-8")
     return out_file
+
+
+def save_tolerance_sweep_plot(
+    sweep_df: pd.DataFrame,
+    output_path: str | Path,
+    title: str = "Sensitivity of Detection Metrics to Temporal Matching Tolerance",
+) -> Path:
+    """Experiment 1 plot: Se, PPV, and F1 vs. matching window (8.33 to 150 ms)."""
+    out_file = Path(output_path)
+    out_file.parent.mkdir(parents=True, exist_ok=True)
+
+    scenarios = sweep_df["scenario"].drop_duplicates().tolist()
+    palette = ["#0f172a", "#0284c7", "#4f46e5", "#0d9488", "#d97706", "#dc2626"]
+    markers = ["o", "s", "^", "D", "v", "P"]
+
+    fig, axes = plt.subplots(1, 3, figsize=(13.5, 4.6), sharex=True, constrained_layout=True)
+    metrics_info = [
+        ("sensitivity", "Sensitivity (%)"),
+        ("ppv", "Positive Predictive Value (%)"),
+        ("f1_score", "F1-Score (%)"),
+    ]
+
+    for col, (col_name, ylabel) in enumerate(metrics_info):
+        ax = axes[col]
+        for idx, scen in enumerate(scenarios):
+            sub = sweep_df[sweep_df["scenario"] == scen].sort_values("tolerance_ms")
+            ax.plot(
+                sub["tolerance_ms"].to_numpy(dtype=float),
+                sub[col_name].to_numpy(dtype=float) * 100.0,
+                marker=markers[idx % len(markers)],
+                color=palette[idx % len(palette)],
+                linewidth=1.7,
+                markersize=5,
+                label=scen,
+            )
+        ax.set_xlabel("Matching Tolerance ±Δt (ms)")
+        ax.set_ylabel(ylabel)
+        ax.set_title(ylabel, fontsize=10.5, fontweight="bold")
+        ax.set_xticks([8.33, 25, 50, 100, 150])
+        _style_ecg_axes(ax)
+
+    axes[0].legend(loc="lower right", fontsize=8.0, frameon=True)
+    fig.suptitle(title, fontsize=12, fontweight="bold")
+    fig.savefig(out_file, dpi=200)
+    plt.close(fig)
+    return out_file
+
+
+def save_nstdb_stress_test_plot(
+    nstdb_df: pd.DataFrame,
+    output_path: str | Path,
+    title: str = "MIT-BIH Noise Stress Test (bw, ma, em) — Real Acquisition Noise",
+) -> Path:
+    """Experiment 2 plot: F1-score, Se, PPV, and MAE_t across physical noise SNRs (24 to -6 dB)."""
+    out_file = Path(output_path)
+    out_file.parent.mkdir(parents=True, exist_ok=True)
+
+    noise_colors = {"bw": "#0284c7", "ma": "#d97706", "em": "#dc2626"}
+    noise_markers = {"bw": "o", "ma": "s", "em": "^"}
+
+    fig, axes = plt.subplots(2, 2, figsize=(12.2, 7.6), sharex=True, constrained_layout=True)
+    panels = [
+        (axes[0, 0], "sensitivity", "Sensitivity (%)", 100.0),
+        (axes[0, 1], "ppv", "Positive Predictive Value (%)", 100.0),
+        (axes[1, 0], "f1_score", "F1-Score (%)", 100.0),
+        (axes[1, 1], "mae_ms", "Temporal MAE_t (ms)", 1.0),
+    ]
+
+    for ax, col_name, ylabel, scale in panels:
+        for ntype in ("bw", "ma", "em"):
+            sub = nstdb_df[nstdb_df["noise_type"] == ntype].sort_values("snr_db", ascending=False)
+            if sub.empty:
+                continue
+            lbl = str(sub["noise_label"].iloc[0])
+            ax.plot(
+                sub["snr_db"].to_numpy(dtype=float),
+                sub[col_name].to_numpy(dtype=float) * scale,
+                marker=noise_markers[ntype],
+                color=noise_colors[ntype],
+                linewidth=1.8,
+                label=lbl,
+            )
+        ax.invert_xaxis()  # High SNR (24 dB) on left -> Severe noise (-6 dB) on right
+        ax.set_ylabel(ylabel)
+        ax.set_title(ylabel, fontsize=10.5, fontweight="bold")
+        _style_ecg_axes(ax)
+
+    axes[1, 0].set_xlabel("Target Signal-to-Noise Ratio (dB) [Decreasing →]")
+    axes[1, 1].set_xlabel("Target Signal-to-Noise Ratio (dB) [Decreasing →]")
+    axes[1, 1].axhline(1000.0 / 360.0, color="#64748b", linestyle=":", linewidth=1.0, label="1 Sample Δt (2.78 ms)")
+    axes[0, 0].legend(loc="lower left", fontsize=8.5, frameon=True)
+    axes[1, 1].legend(loc="upper left", fontsize=8.0, frameon=True)
+    fig.suptitle(title, fontsize=12, fontweight="bold")
+    fig.savefig(out_file, dpi=200)
+    plt.close(fig)
+    return out_file
+
+
+def save_pvc_morphology_comparison_plot(
+    morph_df: pd.DataFrame,
+    output_path: str | Path,
+    record_id: str,
+    condition_label: str,
+) -> Path:
+    """Experiment 3 plot: Compare A_QRS, W_QRS, max |dV/dt|, and E_QRS for TP vs FN beats."""
+    out_file = Path(output_path)
+    out_file.parent.mkdir(parents=True, exist_ok=True)
+
+    pvc_df = morph_df[morph_df["symbol"] == "V"]
+    target_df = pvc_df if (not pvc_df.empty and (pvc_df["outcome"] == "FN").any()) else morph_df
+    subset_name = "Ventricular Ectopic Beats (V / PVC)" if target_df is pvc_df else "All Reference Beats"
+
+    tp_df = target_df[target_df["outcome"] == "TP"]
+    fn_df = target_df[target_df["outcome"] == "FN"]
+
+    features = [
+        ("a_qrs_mv", "A_QRS Peak-to-Peak (mV)"),
+        ("w_qrs_ms", "Estimated Width W_QRS (ms)"),
+        ("max_dvdt_filt_mv_s", "Max Filtered Slope |dV/dt| (mV/s)"),
+        ("e_qrs_over_threshold", "Integrated Energy / Threshold (E_QRS / I1)"),
+    ]
+
+    fig, axes = plt.subplots(1, 4, figsize=(13.6, 4.6), constrained_layout=True)
+    for ax, (col, label) in zip(axes, features):
+        tp_vals = tp_df[col].dropna().to_numpy(dtype=float)
+        fn_vals = fn_df[col].dropna().to_numpy(dtype=float)
+        data = [tp_vals if tp_vals.size > 0 else np.array([0.0]), fn_vals if fn_vals.size > 0 else np.array([0.0])]
+
+        bp = ax.boxplot(
+            data,
+            tick_labels=[f"TP (n={tp_vals.size})", f"FN (n={fn_vals.size})"],
+            patch_artist=True,
+            showmeans=True,
+        )
+        bp["boxes"][0].set_facecolor("#bbf7d0")
+        bp["boxes"][0].set_edgecolor("#15803d")
+        bp["boxes"][1].set_facecolor("#fecaca")
+        bp["boxes"][1].set_edgecolor("#b91c1c")
+        if col == "e_qrs_over_threshold":
+            ax.axhline(1.0, color="#dc2626", linestyle="--", linewidth=1.0, label="Threshold I1 = 1.0")
+            ax.legend(loc="upper right", fontsize=8.0)
+        ax.set_title(label, fontsize=9.5, fontweight="bold")
+        _style_ecg_axes(ax)
+
+    fig.suptitle(
+        f"Record {record_id} ({condition_label}) — Biophysical Feature Comparison: {subset_name}",
+        fontsize=11.5,
+        fontweight="bold",
+    )
+    fig.savefig(out_file, dpi=200)
+    plt.close(fig)
+    return out_file
+
+
+def save_xqrs_benchmark_plot(
+    bench_df: pd.DataFrame,
+    output_path: str | Path,
+    title: str = "Detector Benchmark: Custom Pan–Tompkins vs. WFDB XQRS",
+) -> Path:
+    """Experiment 4 plot: Side-by-side F1-score and MAE_t comparison against WFDB XQRS."""
+    out_file = Path(output_path)
+    out_file.parent.mkdir(parents=True, exist_ok=True)
+
+    scenarios = bench_df["scenario"].drop_duplicates().tolist()
+    x = np.arange(len(scenarios))
+    width = 0.35
+
+    pt_sub = bench_df[bench_df["detector"] == "Pan-Tompkins (Custom)"].set_index("scenario").reindex(scenarios)
+    xq_sub = bench_df[bench_df["detector"] == "WFDB XQRS"].set_index("scenario").reindex(scenarios)
+
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(11.8, 7.2), sharex=True, constrained_layout=True)
+
+    ax1.bar(x - width / 2, pt_sub["f1_score"].to_numpy(dtype=float) * 100.0, width, label="Pan–Tompkins (Custom)", color="#2563eb")
+    ax1.bar(x + width / 2, xq_sub["f1_score"].to_numpy(dtype=float) * 100.0, width, label="WFDB XQRS", color="#0d9488")
+    min_f1 = float(np.nanmin(bench_df["f1_score"].to_numpy(dtype=float) * 100.0))
+    ax1.set_ylim(max(0.0, min(90.0, min_f1 - 5.0)), 101.5)
+    ax1.set_ylabel("F1-Score (%)")
+    ax1.set_title(title, fontsize=11.5, fontweight="bold")
+    ax1.legend(loc="lower left", fontsize=9)
+    _style_ecg_axes(ax1)
+
+    ax2.bar(x - width / 2, pt_sub["mae_ms"].to_numpy(dtype=float), width, label="Pan–Tompkins (Custom)", color="#2563eb")
+    ax2.bar(x + width / 2, xq_sub["mae_ms"].to_numpy(dtype=float), width, label="WFDB XQRS", color="#0d9488")
+    ax2.axhline(1000.0 / 360.0, color="#64748b", linestyle="--", linewidth=0.9, label="1 Sample Δt (2.78 ms)")
+    ax2.set_ylabel("Temporal MAE_t (ms)")
+    ax2.set_xticks(x)
+    ax2.set_xticklabels(scenarios, rotation=16, ha="right")
+    ax2.set_title("Temporal Localization Accuracy Comparison (MAE_t)", fontsize=10.5, fontweight="bold")
+    ax2.legend(loc="upper left", fontsize=8.5)
+    _style_ecg_axes(ax2)
+
+    fig.savefig(out_file, dpi=200)
+    plt.close(fig)
+    return out_file
+

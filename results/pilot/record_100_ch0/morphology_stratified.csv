@@ -1,0 +1,19 @@
+record,scenario_key,scenario,symbol,n_ref,tp,fn,sensitivity,mae_ms
+100,baseline,Baseline,N,2231,2231,0,1.0,1.4929
+100,baseline,Baseline,A,33,33,0,1.0,1.431
+100,baseline,Baseline,V,1,1,0,1.0,30.5556
+100,baseline_wander,Baseline wander,N,2231,2231,0,1.0,1.5451
+100,baseline_wander,Baseline wander,A,33,33,0,1.0,1.431
+100,baseline_wander,Baseline wander,V,1,1,0,1.0,30.5556
+100,mains_interference,Mains interference,N,2231,2231,0,1.0,1.519
+100,mains_interference,Mains interference,A,33,33,0,1.0,1.5993
+100,mains_interference,Mains interference,V,1,1,0,1.0,30.5556
+100,white_noise_20dB,White noise (20 dB),N,2231,2231,0,1.0,1.5526
+100,white_noise_20dB,White noise (20 dB),A,33,33,0,1.0,1.7677
+100,white_noise_20dB,White noise (20 dB),V,1,1,0,1.0,30.5556
+100,white_noise_10dB,White noise (10 dB),N,2231,2231,0,1.0,1.7182
+100,white_noise_10dB,White noise (10 dB),A,33,33,0,1.0,1.6835
+100,white_noise_10dB,White noise (10 dB),V,1,1,0,1.0,58.3333
+100,white_noise_5dB,White noise (5 dB),N,2231,2231,0,1.0,1.9311
+100,white_noise_5dB,White noise (5 dB),A,33,33,0,1.0,1.936
+100,white_noise_5dB,White noise (5 dB),V,1,1,0,1.0,58.3333

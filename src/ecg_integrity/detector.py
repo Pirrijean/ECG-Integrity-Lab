@@ -7,6 +7,12 @@ Pipeline stages (Step 12):
 4. Moving-window integration: M[n] = (1/N) * sum_{k=0}^{N-1} e[n - k] (120 ms window)
 5. Adaptive Pan–Tompkins dual-threshold peak detection with 250 ms refractory period
 6. Local R-peak relocation (±90 ms window) on the filtered waveform with 250 ms minimum separation
+
+Note on temporal resolution:
+``detect_qrs_pan_tompkins`` returns integer sample indices ``r_peaks`` whose individual
+discrete temporal resolution is ``dt = 1 / fs`` (2.7778 ms at 360 Hz). An optional
+independent helper ``refine_peaks_parabolic`` is provided for experimental sub-sample
+vertex interpolation without altering the baseline discrete detector.
 """
 
 from __future__ import annotations
@@ -40,13 +46,14 @@ class QRSDetectorConfig:
 
 @dataclass(frozen=True)
 class QRSDetectionOutput:
-    """Detected QRS peak indices and intermediate signal stages."""
+    """Detected QRS peak indices, intermediate signal stages, and adaptive threshold trace."""
 
     r_peaks: np.ndarray
     filtered: np.ndarray
     differentiated: np.ndarray
     squared: np.ndarray
     integrated: np.ndarray
+    threshold_trace: np.ndarray
     config: QRSDetectorConfig
 
 
@@ -90,6 +97,7 @@ def detect_qrs_pan_tompkins(
             differentiated=differentiated,
             squared=squared,
             integrated=integrated,
+            threshold_trace=np.zeros_like(integrated),
             config=cfg,
         )
 
@@ -105,17 +113,22 @@ def detect_qrs_pan_tompkins(
     threshold_i1 = npki + cfg.threshold_alpha * (spki - npki)
     threshold_i2 = 0.5 * threshold_i1
 
+    threshold_trace = np.full(x.size, threshold_i1, dtype=np.float64)
     accepted_integrated: list[int] = []
     rr_history: list[int] = []
     rejected_since_last: list[tuple[int, float]] = []
+    prev_trace_idx = 0
 
     for idx in candidate_peaks:
-        peak_val = float(integrated[idx])
+        idx_int = int(idx)
+        threshold_trace[prev_trace_idx : idx_int + 1] = threshold_i1
+        prev_trace_idx = idx_int + 1
+        peak_val = float(integrated[idx_int])
 
         # Searchback check if long gap exceeds 1.66 * running mean RR
         if accepted_integrated and rr_history and rejected_since_last:
             mean_rr = float(np.mean(rr_history[-8:]))
-            if (idx - accepted_integrated[-1]) > cfg.searchback_rr_factor * mean_rr:
+            if (idx_int - accepted_integrated[-1]) > cfg.searchback_rr_factor * mean_rr:
                 best_sb_idx, best_sb_val = max(rejected_since_last, key=lambda item: item[1])
                 if best_sb_val >= threshold_i2 and (best_sb_idx - accepted_integrated[-1]) >= refractory_samples:
                     rr_history.append(best_sb_idx - accepted_integrated[-1])
@@ -126,27 +139,28 @@ def detect_qrs_pan_tompkins(
                     threshold_i2 = 0.5 * threshold_i1
 
         if peak_val >= threshold_i1:
-            if not accepted_integrated or (idx - accepted_integrated[-1]) >= refractory_samples:
+            if not accepted_integrated or (idx_int - accepted_integrated[-1]) >= refractory_samples:
                 if accepted_integrated:
-                    rr_history.append(int(idx - accepted_integrated[-1]))
-                accepted_integrated.append(int(idx))
+                    rr_history.append(int(idx_int - accepted_integrated[-1]))
+                accepted_integrated.append(idx_int)
                 # Clamp extreme transient spikes to prevent post-artifact blindness
                 clamped_peak = min(peak_val, 3.0 * spki) if spki > 0 else peak_val
                 spki = 0.125 * clamped_peak + 0.875 * spki
                 rejected_since_last.clear()
         else:
             npki = 0.125 * peak_val + 0.875 * npki
-            rejected_since_last.append((int(idx), peak_val))
+            rejected_since_last.append((idx_int, peak_val))
 
         threshold_i1 = npki + cfg.threshold_alpha * (spki - npki)
         threshold_i2 = 0.5 * threshold_i1
+
+    if prev_trace_idx < x.size:
+        threshold_trace[prev_trace_idx:] = threshold_i1
 
     # 6. Relocate each integrated detection onto the local QRS extremum (±90 ms)
     search_samples = max(1, int(round((cfg.search_window_ms / 1000.0) * fs)))
     min_sep_samples = max(1, int(round((cfg.min_separation_ms / 1000.0) * fs)))
 
-    # Determine dominant QRS deflection polarity on filtered signal so relocation snaps consistently
-    # to the primary R/S wave rather than switching between positive R and negative S lobes.
     prelim_pos = [
         float(np.max(filtered[max(0, p - search_samples) : min(x.size, p + search_samples + 1)]))
         for p in accepted_integrated
@@ -191,6 +205,7 @@ def detect_qrs_pan_tompkins(
         differentiated=differentiated,
         squared=squared,
         integrated=integrated,
+        threshold_trace=threshold_trace,
         config=cfg,
     )
 
@@ -200,5 +215,31 @@ def detect_qrs(
     fs: float,
     config: QRSDetectorConfig | None = None,
 ) -> np.ndarray:
-    """Convenience wrapper returning only the detected R-peak sample indices."""
+    """Convenience wrapper returning only the detected R-peak integer sample indices."""
     return detect_qrs_pan_tompkins(signal, fs=fs, config=config).r_peaks
+
+
+def refine_peaks_parabolic(
+    waveform: np.ndarray,
+    peak_indices: np.ndarray,
+) -> np.ndarray:
+    """Optional sub-sample 3-point parabolic vertex interpolation around discrete peaks.
+
+    Provided for independent methodological comparison when sub-sample fiducial
+    refinement is studied; NOT enabled in the baseline discrete detector.
+    """
+    arr = np.asarray(waveform, dtype=np.float64)
+    peaks = np.asarray(peak_indices, dtype=np.int64)
+    refined = peaks.astype(np.float64).copy()
+
+    for idx, k in enumerate(peaks):
+        if 0 < k < (arr.size - 1):
+            y_minus = abs(arr[k - 1])
+            y_zero = abs(arr[k])
+            y_plus = abs(arr[k + 1])
+            denom = y_minus - 2.0 * y_zero + y_plus
+            if abs(denom) > 1e-12 and y_zero >= y_minus and y_zero >= y_plus:
+                delta = 0.5 * (y_minus - y_plus) / denom
+                if abs(delta) <= 0.5:
+                    refined[idx] = float(k) + delta
+    return refined

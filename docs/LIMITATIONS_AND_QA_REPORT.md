@@ -1,104 +1,105 @@
-# Quantitative QA Report, Failure Mode Analysis & Engineering Limitations
+# Quantitative QA Report, Phase-2 Error Analysis & Methodological Limitations (`v0.2.0`)
 
-**Project:** ECG-Integrity-Lab (`v0.1.0`)  
-**Scope:** Empirical Evaluation of MIT-BIH Record `100` (5-min initial test) and 5-Record Full-Duration Pilot (`100`, `101`, `103`, `105`, `106` — 1800 s / 30 min each, Channel 0 `MLII`)  
-
----
-
-## 1. Software & Metrological Pre-Flight Verification Results
-
-Prior to processing physiological recordings, the software arithmetic and scaling pipeline were verified using `digital_phantom.py` (`python examples/run_digital_phantom.py`) and the automated `pytest` suite (`7/7` unit & negative fault-injection tests passing):
-
-| Verification Test | Expected Value | Observed Value | Relative Error | Status |
-| :--- | :---: | :---: | :---: | :---: |
-| Nominal Pulse Count ($10\text{ s}$ @ $60\text{ bpm}$) | `10` | `10` | `0.00%` | PASS |
-| Nominal Amplitude ($1.0\text{ mV}$) | `1.0000 mV` | `1.0000 mV` | `0.00%` | PASS |
-| Nominal Heart Rate ($60.0\text{ bpm}$, $f_s = 360\text{ Hz}$) | `60.0000 bpm` | `60.0000 bpm` | `0.00%` | PASS |
-| Scale Sensitivity Check ($+5\%$ Gain, $1.05\text{ mV}$) | `+5.00%` | `+5.00%` | `0.00%` | PASS |
-| Fault Injection (`fs <= 0`, `NaN`, invalid channel, raw ADC counts $>20\text{ mV}$) | `ValueError` | `ValueError` | — | PASS |
+**Project:** ECG-Integrity-Lab (`v0.2.0`)  
 
 ---
 
-## 2. Header & Data Integrity Audit Across Pilot Records (Step 9)
+## 1. Pooled Baseline Performance (Micro-Aggregated Counts vs. Per-Record Breakdown)
 
-All five recordings satisfied physical calibration checks (`fs = 360.0 Hz`, $\Delta t = 2.7778\text{ ms}$, physical units `mV`, ADC gain `200.0 counts/mV`, 11-bit resolution, digital baseline `1024 counts`, `0` non-finite samples). Filtering `.atr` files strictly to true QRS beat symbols prevented rhythm/noise markers (`+`, `~`, `|`) from corrupting ground-truth counts:
+Across the five 30-minute MIT-BIH pilot recordings (`100`, `101`, `103`, `105`, `106`), pooling counts directly (micro-aggregation, avoiding unweighted averaging of percentages) yields:
 
-| Record | Duration (s) | Samples | True Reference Beats (`n_ref`) | Excluded Non-Beat Markers | Beat Symbol Breakdown | Clinical / Technical Profile (MIT-BIH Header) |
-| :---: | :---: | :---: | :---: | :---: | :--- | :--- |
-| **`100`** (5 min) | 300.0 | 108,000 | 371 | 1 | `N: 367, A: 4` | Clean normal sinus rhythm, rare APCs |
-| **`100`** (30 min) | 1800.0 | 648,000 | 2,265 | 1 | `N: 2231, A: 33, V: 1` | High-SNR sinus reference |
-| **`101`** (30 min) | 1800.0 | 648,000 | 1,860 | 11 | `N: 1855, A: 3, Q: 2` | Sinus rhythm with baseline drift & isolated artifact bursts |
-| **`103`** (30 min) | 1800.0 | 648,000 | 2,078 | 12 | `N: 2076, A: 2` | Clean sinus rhythm with subtle amplitude transitions |
-| **`105`** (30 min) | 1800.0 | 648,000 | 2,565 | **119** | `N: 2519, V: 41, Q: 5` | **Predominant high-grade electrode motion noise & uniform PVCs** |
-| **`106`** (30 min) | 1800.0 | 648,000 | 2,021 | **71** | `N: 1503, V: 518` | **Frequent multiform PVCs & ventricular bigeminy/trigeminy** |
+| Metric | Pooled Baseline Count / Value | Methodological Note |
+| :--- | :---: | :--- |
+| **Reference Beats ($N_{\text{ref}}$)** | `10,789` | True QRS beat symbols only (`190+` non-beat `.atr` markers excluded) |
+| **True Positives (TP)** | `10,777` | Strict 1-to-1 matching ($\pm 150\text{ ms}$ primary criterion) |
+| **False Positives (FP)** | `37` | **89.2% (`33/37`) concentrated in Record `105`** |
+| **False Negatives (FN)** | `12` | **`8/12` in Record `105`; `2/12` in Record `106`** |
+| **Pooled Sensitivity** | **99.89%** | $10,777 / (10,777 + 12)$ |
+| **Pooled PPV** | **99.66%** | $10,777 / (10,777 + 37)$ |
+| **Pooled F1-Score** | **99.77%** | Harmonic mean of pooled Se and PPV |
 
-> [!IMPORTANT]
-> Had the 119 non-beat signal-quality/artifact markers in Record `105` or the 71 rhythm-transition markers in Record `106` been treated naively as QRS complexes, Sensitivity would have been artificially penalized by up to $4.4\%$ solely due to annotation misinterpretation rather than detector error.
-
----
-
-## 3. Empirical Results: Initial 5-Minute Verification (Record `100`, `MLII`)
-
-| Scenario | Condition | TP | FP | FN | Sensitivity (%) | PPV (%) | F1-Score (%) | $\text{MAE}_t$ (ms) |
-| :--- | :--- | :-: | :-: | :-: | :-: | :-: | :-: | :-: |
-| **Baseline** | Original calibrated signal | 371 | 0 | 0 | 100.00 | 100.00 | 100.00 | 1.17 |
-| **Baseline wander** | $0.20\text{ mV}$, $0.25\text{ Hz}$ | 371 | 0 | 0 | 100.00 | 100.00 | 100.00 | 1.23 |
-| **Mains interference** | $0.05\text{ mV}$, $60.0\text{ Hz}$ | 371 | 0 | 0 | 100.00 | 100.00 | 100.00 | 1.26 |
-| **White noise (20 dB)** | AWGN $20\text{ dB}$ SNR (`seed=42`) | 371 | 0 | 0 | 100.00 | 100.00 | 100.00 | 1.23 |
-| **White noise (10 dB)** | AWGN $10\text{ dB}$ SNR (`seed=42`) | 371 | 0 | 0 | 100.00 | 100.00 | 100.00 | 1.50 |
-| **White noise (5 dB)** | AWGN $5\text{ dB}$ SNR (`seed=42`) | 371 | 0 | 0 | 100.00 | 100.00 | 100.00 | 1.70 |
+> [!NOTE]
+> Evaluating these `10,789` beats across `6` perturbation conditions produces `64,734` *repeated-measures evaluation opportunities*, **not** `64,734` statistically independent observations.
 
 ---
 
-## 4. Empirical Results: 5-Record Full-Duration Pilot (10,789 Reference Beats)
+## 2. Core Finding: F1-Score Stability vs. Temporal Jitter & HRV (`RMSSD`) Bias
 
-Summary of F1-score, error counts (`FP` / `FN`), and temporal localization precision ($\text{MAE}_t$) across `results/pilot/pilot_metrics.csv`:
+On Record `100` (30 min, $2,265$ reference beats; discrete sampling interval $\Delta t = 2.78\text{ ms}$), `TP = 2,265`, `FP = 0`, `FN = 0` (`F1 = 100.00%`) across all synthetic SNR levels, yet temporal precision and downstream normal-to-normal (`N`–`N`, $n = 2,196$ clean sinus pairs) `RMSSD` degrade monotonically (`results/pilot/record_100_ch0/hrv_jitter_metrics.csv`):
 
-| Record | Baseline (`FP`/`FN`, F1, $\text{MAE}_t$) | Wander $0.25\text{ Hz}$ (`FP`/`FN`, F1, $\text{MAE}_t$) | Mains $60\text{ Hz}$ (`FP`/`FN`, F1, $\text{MAE}_t$) | AWGN $20\text{ dB}$ (`FP`/`FN`, F1, $\text{MAE}_t$) | AWGN $10\text{ dB}$ (`FP`/`FN`, F1, $\text{MAE}_t$) | AWGN $5\text{ dB}$ (`FP`/`FN`, F1, $\text{MAE}_t$) |
-| :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **`100`** | `0/0`, 100.00%, 1.50 ms | `0/0`, 100.00%, 1.56 ms | `0/0`, 100.00%, 1.53 ms | `0/0`, 100.00%, 1.57 ms | `0/0`, 100.00%, 1.74 ms | `0/0`, 100.00%, 1.96 ms |
-| **`101`** | `4/1`, 99.87%, 1.86 ms | `4/1`, 99.87%, 1.84 ms | `4/1`, 99.87%, 1.83 ms | `4/1`, 99.87%, 1.82 ms | `4/1`, 99.87%, 1.92 ms | `4/1`, 99.87%, 2.14 ms |
-| **`103`** | `0/1`, 99.98%, 1.92 ms | `0/1`, 99.98%, 1.97 ms | `0/1`, 99.98%, 1.92 ms | `0/1`, 99.98%, 1.96 ms | `0/1`, 99.98%, 2.09 ms | `0/1`, 99.98%, 2.35 ms |
-| **`105`** | `33/8`, 99.20%, 1.23 ms | `33/8`, 99.20%, 1.18 ms | `33/7`, 99.22%, 1.65 ms | `36/11`, 99.09%, 1.76 ms | `34/10`, 99.15%, 2.69 ms | `34/12`, 99.11%, **3.56 ms** |
-| **`106`** | `0/2`, 99.95%, 2.36 ms | `0/2`, 99.95%, 2.38 ms | `0/2`, 99.95%, 2.80 ms | `0/2`, 99.95%, 2.83 ms | `0/4`, 99.90%, 3.58 ms | `4/6`, 99.75%, **4.27 ms** |
+| Condition | F1-Score (%) | Ensemble $\text{MAE}_t$ (ms) | Error SD $\sigma_t$ (ms) | RR MAE (ms) | Reference `RMSSD` (ms) | Detected `RMSSD` (ms) | `RMSSD` Inflation (%) |
+| :--- | :-: | :-: | :-: | :-: | :-: | :-: | :-: |
+| **Baseline** | 100.00 | 1.50 | 1.68 | 1.52 | 27.80 | 28.10 | +1.06% |
+| **AWGN 20 dB** | 100.00 | 1.57 | 1.73 | 1.57 | 27.80 | 28.06 | +0.94% |
+| **AWGN 10 dB** | 100.00 | 1.74 | 2.31 | 1.93 | 27.80 | 28.27 | +1.68% |
+| **AWGN 5 dB** | 100.00 | **1.96** (+30.7%) | **2.62** (+56.0%) | **2.41** | 27.80 | **28.51** | **+2.54%** |
 
----
-
-## 5. Engineering Answers to Step 16 Diagnostic Questions
-
-1. **Which interference produces the most False Positives (FPs)?**
-   - Among *synthetic* perturbations, **severe broadband Gaussian white noise ($5\text{ dB}$ SNR)** and **in-band clinical electrode motion artifacts** (native to Record `105`, producing `33–36 FP`) are the primary drivers of False Positives.
-   - Stationary out-of-band interferences ($0.25\text{ Hz}$ respiratory baseline wander and $60\text{ Hz}$ power-line hum) generated **zero additional FPs** on clean and arrhythmic records because their frequencies lie more than two octaves outside the $5\text{–}20\text{ Hz}$ 4th-order zero-phase Butterworth passband (`sosfiltfilt` yields an effective 8th-order $-48\text{ dB/octave}$ stopband attenuation).
-   - By contrast, white noise distributes spectral energy uniformly across $[0, 180\text{ Hz}]$; the $\sim 8.3\%$ spectral fraction inside $5\text{–}20\text{ Hz}$ passes unattenuated into the differentiator $d[n]$ and squarer $e[n]$, creating transient energy bursts that cross `THRESHOLD_I1` (e.g., `0 -> 4 FP` on Record `106` at $5\text{ dB}$).
-
-2. **Under which condition do missed beats (False Negatives, FNs) increase?**
-   - FNs increase when **high broadband noise ($10\text{ dB}$ and $5\text{ dB}$ SNR) coincides with ectopic or aberrant QRS morphologies** (Record `106`: `2 FN` at baseline $\rightarrow$ `4 FN` at $10\text{ dB}$ $\rightarrow$ `6 FN` at $5\text{ dB}$; Record `105`: `8 FN` $\rightarrow$ `12 FN` at $5\text{ dB}$).
-   - **Biophysical mechanism:** Multiform premature ventricular contractions (`V` beats, comprising $25.6\%$ of Record `106`) have wider durations and gentler slopes ($|dV/dt|$) than narrow His–Purkinje-conducted `N` beats. Because the differentiator acts as a high-pass slope amplifier, wide PVCs generate smaller peaks in $e[n] = (dx/dn)^2$ while broadband noise elevates the running noise floor `NPKI`, narrowing the margin between weak ectopic beats and `THRESHOLD_I1`.
-
-3. **How much does Sensitivity change as SNR decreases?**
-   - On high-SNR narrow-QRS sinus recordings (`100`, `101`, `103`), Sensitivity remains invariant ($99.95\%\text{–}100.00\%$) down to $5\text{ dB}$ SNR.
-   - On records with severe artifacts or multiform ventricular ectopy (`105`, `106`), Sensitivity drops progressively from $99.69\% \rightarrow 99.53\%$ (`105`) and $99.90\% \rightarrow 99.70\%$ (`106`). While aggregate percentages look high, in a 30-minute window those drops represent $50\%\text{–}200\%$ relative increases in missed cardiac beats.
-
-4. **Do detections shift in time ($\text{MAE}_t$ and signed bias)?**
-   - **Yes — temporal jitter is a far more sensitive early indicator of signal degradation than beat-count F1-score.**
-   - Even on Record `100` where F1 remains $100.00\%$ across all six scenarios, $\text{MAE}_t$ increases monotonically by **$+30.0\%$** (`1.50 ms` $\rightarrow$ `1.96 ms`) and timing error standard deviation increases by **$+56.1\%$** (`1.68 ms` $\rightarrow$ `2.62 ms`).
-   - On Record `105` and Record `106`, $\text{MAE}_t$ at $5\text{ dB}$ reaches **`3.56 ms` ($+190\%$)** and **`4.27 ms` ($+81\%$)**, exceeding the single-sample quantization interval $\Delta t = 2.78\text{ ms}$ — a critical degradation if downstream heart-rate variability (HRV) fiducial intervals are computed from detected R-peaks.
-
-5. **Does the $5\text{–}20\text{ Hz}$ filter suppress interference without excessively degrading QRS localization?**
-   - Because `scipy.signal.sosfiltfilt` applies forward-backward zero-phase filtering, it eliminates nonlinear phase delay (group delay $= 0$ across all frequencies), maintaining sub-sample localization ($\text{MAE}_t \approx 1.2\text{–}2.4\text{ ms} < \Delta t$) on baseline recordings while completely rejecting $0.25\text{ Hz}$ drift and $60\text{ Hz}$ interference.
-   - However, zero-phase `sosfiltfilt` is **non-causal** (requires the full signal buffer or block look-ahead) and cannot run sample-by-sample in real-time embedded patient monitors without introducing causal filter delay.
-
-6. **Does the detector behave identically across distinct recordings?**
-   - **No.** Evaluating exclusively on Record `100` (`F1 = 100.0%`, `FP = 0`, `FN = 0`) creates a strong optimistic bias. Expanding to Record `105` (motion artifacts) and Record `106` (multiform PVCs) immediately exposes classical Pan–Tompkins vulnerabilities to **in-band non-stationary electrode motion** ($5\text{–}15\text{ Hz}$ spectral overlap with QRS) and **slope-attenuated ventricular ectopy**.
+*(Precision note: $\text{MAE}_t < 2.78\text{ ms}$ reflects the arithmetic average of discrete sample offsets across $2,265$ beats; individual peak indices remain quantized to multiples of $\Delta t = 2.78\text{ ms}$. Signed errors $e_i = t_{\text{det},i} - t_{\text{ref},i} > 0$ indicate detections slightly lag the expert `.atr` mark).*
 
 ---
 
-## 6. Known Engineering, Clinical & Metrological Limitations
+## 3. Experiment 1 — Sensitivity to Temporal Matching Window (`tolerance_sweep.csv`)
 
-1. **Not a Medical Device or Diagnostic System:** `ECG-Integrity-Lab` is an offline biomedical engineering verification test bench. It has not undergone clinical validation, risk management (ISO 14971), software lifecycle verification (IEC 62304), or regulatory review.
-2. **Non-Diagnostic Filter Bandwidth ($5\text{–}20\text{ Hz}$):** Diagnostic Resting/Ambulatory ECG standards require much wider passbands (typically $0.05\text{–}150\text{ Hz}$ or $0.67\text{–}40\text{ Hz}$ depending on application) to preserve ST-segment elevation/depression, Q-waves, and P/T morphology. The $5\text{–}20\text{ Hz}$ filter intentionally distorts waveform morphology to maximize QRS detection SNR.
-3. **Non-Causal Zero-Phase Filtering:** `sosfiltfilt` requires offline batch data; transitioning to a real-time embedded microcontroller requires causal IIR/FIR filtering and explicit group-delay compensation.
-4. **Single-Lead Evaluation:** Only Channel 0 (`MLII`) was processed in this baseline study. Multi-lead sensor fusion (combining `MLII` + precordial `V1`/`V5`) is essential when a ventricular ectopic axis is nearly orthogonal to `MLII`.
-5. **Synthetic vs. Physiological Noise Models:** Stationary sinusoidal $0.25\text{ Hz}$ drift, stationary $60\text{ Hz}$ hum, and stationary Gaussian white noise do not fully capture non-stationary EMG bursts, abrupt electrode-skin impedance steps (half-cell potential pops), or electrosurgical interference. MIT-BIH Noise Stress Test Database (`nstdb`) electrode-motion (`em`), muscle-artifact (`ma`), and baseline-wander (`bw`) recordings should be incorporated in Phase 2.
-6. **Software Phantom vs. Traceable Calibration:** `digital_phantom.py` verifies floating-point software scaling and interval math; it does not verify physical ADC linearity, input impedance, CMRR, or SI-traceable voltage standards.
-7. **Dataset Sampling & Statistical Independence:** The 5 pilot records are a purposive engineering stress test, not a random sample. Across the full 48-record MIT-BIH database (47 subjects, since `201` and `202` belong to the same patient), future confidence intervals must use subject-clustered bootstrap resampling.
+Evaluating Record `106` ($2,021$ beats, $25.6\%$ multiform PVCs) across six matching tolerances demonstrates why a single $\pm 150\text{ ms}$ window overstates fiducial accuracy:
+
+| Matching Window | Samples ($360\text{ Hz}$) | Baseline F1 (%) (`FP`/`FN`) | AWGN $10\text{ dB}$ F1 (%) (`FP`/`FN`) | AWGN $5\text{ dB}$ F1 (%) (`FP`/`FN`) |
+| :---: | :---: | :---: | :---: | :---: |
+| **`±8.33 ms`** | `3` | **95.79%** (`84/86`) | **95.74%** (`84/88`) | **93.96%** (`121/123`) |
+| **`±16.67 ms`** | `6` | 97.13% (`57/59`) | 97.33% (`52/56`) | 97.03% (`59/61`) |
+| **`±25.0 ms`** | `9` | 97.38% (`52/54`) | 97.37% (`51/55`) | 97.23% (`55/57`) |
+| **`±50.0 ms`** | `18` | 99.80% (`3/5`) | 99.80% (`2/6`) | 99.60% (`7/9`) |
+| **`±100.0 ms`** | `36` | 99.95% (`0/2`) | 99.90% (`0/4`) | 99.70% (`5/7`) |
+| **`±150.0 ms`** | `54` | 99.95% (`0/2`) | 99.90% (`0/4`) | 99.75% (`4/6`) |
+
+Approximately `50–85` multiform PVCs are detected `25–50 ms` away from the expert annotation (where the local filtered extremum lands on a broad S-wave or secondary R'-lobe rather than the clinician's fiducial mark), causing a sharp drop in F1 below $\pm 50\text{ ms}$.
+
+---
+
+## 4. Experiment 2 — Real Physiological Acquisition Noise (`nstdb`: `bw`, `ma`, `em`)
+
+Testing Record `100` (30 min, $2,265$ beats) against physical noise recordings from the **MIT-BIH Noise Stress Test Database** (`results/nstdb/record_100_ch0/nstdb_metrics.csv`) highlights the gap between synthetic sinusoids/AWGN and ambulatory artifacts:
+
+| Physical Noise Source (`nstdb`) | $24\text{ dB}$ F1 | $12\text{ dB}$ F1 | $6\text{ dB}$ F1 | $0\text{ dB}$ F1 (`FP`/`FN`) | $-6\text{ dB}$ F1 (`FP`/`FN`, PPV, $\sigma_t$) |
+| :--- | :-: | :-: | :-: | :-: | :-: |
+| **`bw` (Baseline Wander)** | 100.00% | 100.00% | 100.00% | 100.00% (`0/0`) | **100.00%** (`0/0`, PPV 100.0%, 1.69 ms) |
+| **`ma` (Muscle / EMG Artifact)** | 100.00% | 100.00% | 100.00% | 99.98% (`1/0`) | **97.18%** (`127/4`, PPV **94.68%**, 5.25 ms) |
+| **`em` (Electrode Motion)** | 100.00% | 100.00% | 100.00% | 100.00% (`0/0`) | **96.27%** (`171/4`, PPV **92.97%**, **6.38 ms**) |
+
+Furthermore, adding `nstdb/em` at $+6\text{ dB}$ onto Record `105` increased False Positives from `33` to `43` (`PPV = 98.34%`). Physical electrode motion (`em`) is substantially more destructive to PPV than stationary Gaussian noise because mechanical skin–electrode transients directly mimic QRS complexes inside $5\text{–}20\text{ Hz}$.
+
+---
+
+## 5. Experiment 3 — Empirical Verification of Record `105` FPs & Record `106` PVC FNs
+
+### 5.1 Record `105` False Positive Inspection (`results/diagnostics/record_105_baseline/fp_inspection.csv`)
+Inspecting $\pm 300\text{ ms}$ windows around all `33` Baseline False Positives confirmed:
+- **Direct Artifact Co-Localization:** FPs `#1`, `#2`, and `#3` (`t = 631.45 s, 1029.94 s, 1030.79 s`) occur within **`3 ms` to `36 ms`** of expert PhysioNet `|` (*isolated QRS-like artifact*) annotations.
+- **Severe Signal-Quality Bursts:** `19/33` FPs occur within $5\text{ s}$ of PhysioNet `~` (*signal-quality/noise transition*) markers, and the remaining `11` lie inside the prolonged `1213–1245 s` high-amplitude motion episode (`raw_ptp_mv` between `2.35` and `5.77 mV`), where $5\text{–}20\text{ Hz}$ energy surges to **`1.57×`–`27.74×` `THRESHOLD_I1`**.
+
+### 5.2 Record `106` Biophysical PVC Comparison (`results/diagnostics/record_106_awgn_5dB/`)
+Stratifying Record `106` at $5\text{ dB}$ SNR by beat symbol showed **`100.00%` Sensitivity on normal `N` beats (`1503/1503`, `0 FN`)** vs. **`98.84%` Sensitivity on `V` beats (`512 TP`, `6 FN`)**, with PVC $\text{MAE}_t = 8.28\text{ ms}$ vs. $2.91\text{ ms}$ on `N` beats. Comparing the four biophysical parameters across Detected (`512 TP`) vs. Missed (`6 FN`) PVCs empirically confirmed the energy-attenuation mechanism:
+- **Peak-to-peak amplitude $A_{\text{QRS}}$:** `TP` mean $\approx 2.57\text{ mV}$ vs. `FN` mean $\approx 1.50\text{ mV}$.
+- **Filtered slope $\max |dV/dt|$:** `TP` mean $\approx 58.8\text{ mV/s}$ vs. **`FN` mean $\approx 18.6\text{ mV/s}$ ($3.2\times$ lower slope)**.
+- **Normalized integrated energy $E_{\text{QRS}} / I_1$:** `TP` mean $= 2.89\times I_1$, whereas **all `6/6` missed PVCs had $E_{\text{QRS}} / I_1 < 0.60$** (strictly below the adaptive detection threshold).
+
+---
+
+## 6. Experiment 4 — Independent Benchmark vs. WFDB `XQRS` (`results/benchmark/`)
+
+Comparing `Pan–Tompkins (Custom)` against `wfdb.processing.xqrs_detect` under identical inputs ($\pm 150\text{ ms}$ primary window) revealed a clear engineering trade-off rather than uniform superiority of either method:
+
+| Record (30 min) | Condition | Custom Pan–Tompkins (`FP`/`FN`, F1, $\text{MAE}_t$) | WFDB `XQRS` (`FP`/`FN`, F1, $\text{MAE}_t$) | Key Engineering Insight |
+| :---: | :--- | :---: | :---: | :--- |
+| **`100`** | Baseline | `0/0`, 100.00%, 1.50 ms | `0/0`, 100.00%, **0.50 ms** | XQRS achieves tighter R-peak centering on narrow sinus beats |
+| **`105`** | Baseline | `33/8`, 99.20%, 1.23 ms | `33/4`, **99.28%**, **1.16 ms** | Both suffer `33 FP` on in-band motion; XQRS halves `FN` (`8 -> 4`) |
+| **`105`** | Real EM $6\text{ dB}$ | `43/10`, 98.97%, 1.45 ms | `34/4`, **99.26%**, **1.27 ms** | XQRS Ricker wavelet rejects `+9` electrode-motion FPs |
+| **`106`** | Baseline | **`0/2`, 99.95%**, 2.36 ms | `0/88`, 97.77%, 1.25 ms | **XQRS misses `88` multiform PVCs (`Se = 95.65%`) vs. `2` for Custom PT** |
+| **`106`** | AWGN $5\text{ dB}$ | **`4/6`, 99.75%**, 4.27 ms | `22/93`, 97.10%, 2.13 ms | Custom PT retains higher PVC sensitivity; XQRS keeps lower jitter on TPs |
+
+---
+
+## 7. Summary of Limitations
+
+1. **Exploratory Characterization, Not Clinical Validation:** Results come from 5 purposively chosen MIT-BIH records; full 48-record evaluation with subject-clustered bootstrap CIs (47 subjects) is required before generalizing across ambulatory populations.
+2. **Non-Diagnostic $5\text{–}20\text{ Hz}$ Bandwidth & Non-Causal `sosfiltfilt`:** Unsuitable for ST-segment or P/T morphological diagnosis and requires causal redesign with group-delay compensation for real-time embedded hardware.
+3. **Functional Digital Phantom Only:** Verifies software scale/rate math (`0.0%` nominal error, `+5.0%` at $1.05\times$), not hardware analog front-ends or SI traceability.

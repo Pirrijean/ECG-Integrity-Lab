@@ -1,9 +1,10 @@
-"""Digital calibration phantom for software amplitude and time-base verification.
+"""Functional and mathematical software verification via digital reference signals.
 
-Important metrological note:
-This module generates a deterministic digital test vector to verify software
-amplitude scaling and temporal interval calculations. It is NOT a physical ECG
-simulator, is NOT traceable to SI units, and does NOT calibrate hardware.
+Important engineering note:
+This module generates a deterministic digital pulse train to verify software
+amplitude scaling and temporal interval arithmetic (functional software test).
+It does NOT verify an electrocardiograph's physical acquisition chain, is NOT
+traceable to SI units, and does NOT constitute metrological hardware calibration.
 """
 
 from __future__ import annotations

@@ -1,87 +1,65 @@
-# ECG Signal Integrity: Design and Verification of a Digital Biomedical Signal Processing Pipeline
+# Beyond F1-Score: Evaluating Temporal Accuracy and Noise Sensitivity of a Pan–Tompkins-Inspired QRS Detection Pipeline
+
+*An exploratory evaluation using the MIT-BIH Arrhythmia and Noise Stress Test Databases*
 
 **Author:** Pirrijean  
-**Framework:** [ECG-Integrity-Lab](https://github.com/Pirrijean/ECG-Integrity-Lab) (`v0.1.0`)  
+**Repository:** [https://github.com/Pirrijean/ECG-Integrity-Lab](https://github.com/Pirrijean/ECG-Integrity-Lab) (`v0.2.0`)  
 
 ---
 
-## Abstract / Executive Summary
+## Abstract
 
-How reliable is a classical electrocardiogram (ECG) QRS detection algorithm when the physiological input is degraded by power-line interference, respiratory baseline drift, and broadband instrumentation noise? To investigate this question rigorously without requiring clinical acquisition hardware, **ECG-Integrity-Lab** was developed in Python as an open biomedical signal conditioning and verification framework using expert-annotated recordings from the **MIT-BIH Arrhythmia Database** ($f_s = 360\text{ Hz}$, 11-bit ADC resolution). Across a five-record full-duration pilot encompassing **10,789 expert-reviewed cardiac beats** (64,734 beat evaluations across six controlled noise scenarios), a zero-phase 4th-order Butterworth bandpass ($5\text{–}20\text{ Hz}$) paired with a Pan–Tompkins-inspired adaptive detector completely suppressed out-of-band $0.25\text{ Hz}$ baseline wander ($0.20\text{ mV}$) and $60\text{ Hz}$ mains interference ($0.05\text{ mV}$) with zero added false detections. However, broadband Gaussian noise ($20\text{ dB} \rightarrow 5\text{ dB}$ SNR) and clinical in-band electrode motion artifacts (`Record 105`) or multiform premature ventricular contractions (`Record 106`) revealed critical degradation mechanisms: temporal R-peak localization error ($\text{MAE}_t$) rose by up to $+190\%$ (from $1.23\text{ ms}$ to $3.56\text{ ms}$ on `Record 105`, and up to $4.27\text{ ms}$ on `Record 106`, surpassing the $2.78\text{ ms}$ sampling interval), while missed ectopic beats tripled at $5\text{ dB}$ SNR.
-
----
-
-## 1. Problem Statement: Signal Integrity in Automated ECG Analysis
-
-Biomedical surface potentials acquired at the skin–electrode interface have millivolt-scale amplitudes ($0.5\text{–}3\text{ mV}$) that are highly vulnerable to coupled electrical and physiological disturbances:
-
-- **Baseline wander ($< 0.5\text{ Hz}$):** Induced by thoracic respiration and skin–electrode half-cell potential shifts.
-- **Power-line interference ($50/60\text{ Hz}$):** Capacitive and inductive mains coupling alongside finite amplifier CMRR.
-- **Broadband electromyographic (EMG) & thermal noise:** Spectral overlap directly inside the $5\text{–}40\text{ Hz}$ QRS energy band.
-- **Electrode motion artifacts ($1\text{–}15\text{ Hz}$):** Transient mechanical impedance changes mimicking QRS complexes in amplitude and slope.
-
-Evaluating an algorithm exclusively on clean sinus rhythm risks overstating performance. Engineering verification requires controlled perturbation testing paired with quantitative beat-matching and temporal localization metrics.
+Standard evaluations of electrocardiogram (ECG) QRS detectors routinely report aggregate beat-classification metrics (Sensitivity, Positive Predictive Value, and F1-score) under a single permissive matching window (typically $\pm 150\text{ ms}$). Using **ECG-Integrity-Lab**, an open Python verification framework, we evaluate a zero-phase Butterworth ($5\text{–}20\text{ Hz}$) and Pan–Tompkins-inspired QRS detection pipeline across five full-duration (30-minute) recordings from the MIT-BIH Arrhythmia Database (`10,789` expert-reviewed reference beats), physical ambulatory noise from the MIT-BIH Noise Stress Test Database (`nstdb`: `bw`, `ma`, `em`), six temporal matching tolerances ($8.33\text{–}150\text{ ms}$), and an independent benchmark against WFDB's `XQRS` detector. Pooled baseline counts yielded `99.89%` Sensitivity (`10,777 TP`, `12 FN`) and `99.66%` PPV (`37 FP`), yet errors were strongly concentrated by signal quality and beat morphology (`33/37` FPs in motion-corrupted `Record 105`). Crucially, we show that **classification metrics can remain at 100.00% while temporal localization accuracy degrades substantially**: on `Record 100`, decreasing white-noise SNR from baseline to $5\text{ dB}$ produced zero false positives or missed beats, but increased mean absolute R-peak timing error ($\text{MAE}_t$) by $+30.7\%$ ($1.50 \rightarrow 1.96\text{ ms}$ across a $2.78\text{ ms}$ discrete sampling interval), timing error standard deviation by $+56.0\%$ ($1.68 \rightarrow 2.62\text{ ms}$), and normal-to-normal `RMSSD` heart-rate variability estimates by $+2.54\%$. Tightening the matching tolerance from $\pm 150\text{ ms}$ to $\pm 8.33\text{ ms}$ reduced `Record 106` baseline F1 from `99.95%` to `95.79%` due to fiducial dispersion on multiform premature ventricular contractions (PVCs), while physical electrode motion (`nstdb/em` at $-6\text{ dB}$) induced `171 FP` (`PPV = 92.97%`), demonstrating why synthetic sinusoidal perturbations alone cannot substantiate claims of ambulatory noise robustness.
 
 ---
 
-## 2. Methodology: Dataset Audit & Calibration QA
+## 1. Introduction
 
-Recordings were imported from PhysioNet's **MIT-BIH Arrhythmia Database** (`mitdb`, ODC-By v1.0) via WFDB Python. Prior to filtering, an automated QA gate (`dataset.py`) audited each header:
+Automated QRS complex detection underpins heart-rate monitoring, physiological event synchronization, and heart-rate variability (HRV) analysis. Surface ECG potentials ($0.5\text{–}3\text{ mV}$) are subject to respiratory baseline drift ($<0.5\text{ Hz}$), $50/60\text{ Hz}$ power-line coupling, electromyographic (EMG) interference, and mechanical electrode-motion transients ($1\text{–}15\text{ Hz}$) whose spectral energy overlaps the QRS complex directly.
 
-- Confirmed $f_s = 360.0\text{ Hz}$ ($\Delta t = 2.7778\text{ ms}$), physical calibration units (`mV`), `200.0 counts/mV` ADC gain, and `1024` digital baseline counts—never treating uncalibrated ADC integers as millivolts.
-- Verified absence of `NaN`/`Inf` samples and enforced physiological amplitude bounds ($|x| \le 20\text{ mV}$).
-- Filtered `.atr` annotations strictly to standard PhysioNet QRS beat symbols, excluding non-beat rhythm/quality markers (e.g., `119` artifact/noise markers in `Record 105` and `71` rhythm transitions in `Record 106`).
+Two methodological blind spots frequently weaken engineering evaluations of QRS algorithms:
+1. **Reliance on a single wide tolerance ($\pm 150\text{ ms}$) and count-based F1-score**, which conceals temporal R-peak jitter relevant to HRV and waveform alignment.
+2. **Equating synthetic sinusoidal/Gaussian perturbations with real ambulatory acquisition artifacts.**
 
----
-
-## 3. Pipeline Architecture: Conditioning, Perturbation & QRS Detection
-
-1. **Controlled Perturbation Generator (`signal_processing.py`):** Applies deterministic $0.25\text{ Hz}$ wander ($0.20\text{ mV}$), $60\text{ Hz}$ mains ($0.05\text{ mV}$), and seeded zero-mean Gaussian noise (`seed=42`) scaled to AC signal variance at $20$, $10$, and $5\text{ dB}$ SNR.
-2. **QRS-Oriented Conditioning:** 4th-order Butterworth bandpass ($5\text{–}20\text{ Hz}$) in second-order sections (`sosfiltfilt`), achieving zero phase distortion while attenuating out-of-band drift and mains hum. *(Explicitly scoped for QRS localization only; unsuitable for diagnostic ST/P/T morphology).*
-3. **Pan–Tompkins-Inspired Detector (`detector.py`):** Centered differentiation $d[n]$, squaring $e[n] = d[n]^2$, $120\text{ ms}$ moving-window integration $M[n]$, dual adaptive signal/noise thresholds (`SPKI`/`NPKI`) with $1.66 \times \overline{RR}$ searchback, $250\text{ ms}$ refractory period, and $\pm 90\text{ ms}$ R-peak relocation.
+This study characterizes both beat-detection performance and temporal localization precision under controlled synthetic perturbations, physical `nstdb` noise recordings, morphology-stratified error diagnostics, and multi-tolerance benchmarking.
 
 ---
 
-## 4. Software Metrological Verification (`digital_phantom.py`)
+## 2. Materials and Methods
 
-Before analyzing human ECGs, amplitude and time-base routines were verified against a synthetic $1.0\text{ mV}$, $60.0\text{ bpm}$, $100\text{ ms}$ rectangular pulse train ($10\text{ s}$ at $360\text{ Hz}$):
+### 2.1 Datasets and Pre-Processing Integrity Audit
+Five 30-minute Channel 0 (`MLII`) recordings (`100`, `101`, `103`, `105`, `106`) from the MIT-BIH Arrhythmia Database ($f_s = 360\text{ Hz}$, $\Delta t = 2.78\text{ ms}$, `200 counts/mV`, 11-bit ADC) were selected purposively to span clean sinus rhythm, baseline drift, severe tape/motion noise (`105`), and frequent multiform PVCs (`106`, $25.6\%$ `V` beats). Header units (`mV`), calibration gains, and sample finiteness were verified automatically prior to processing. Expert `.atr` annotations were filtered strictly to standard PhysioNet QRS beat symbols, excluding `119` non-beat quality/artifact markers (`~`, `|`) in `Record 105` and `71` rhythm markers (`+`) in `Record 106`.
 
-- Nominal pulse count (`10`), amplitude error ($0.0\%$), and rate error ($0.0\%$) were confirmed exactly.
-- Injecting an artificial $+5\%$ scale gain ($1.05\text{ mV}$) yielded an exact $+5.0\%$ measured amplitude error ($E_A$), verifying software sensitivity to calibration drift (while clearly distinguishing digital software verification from SI-traceable physical hardware calibration).
+### 2.2 Functional Software Verification, Conditioning, and Detection
+Arithmetic scaling and interval routines were verified functionally using a synthetic $1.0\text{ mV}$ / $60.0\text{ bpm}$ digital pulse train ($0.0\%$ nominal amplitude/rate error; $+5.0\%$ measured amplitude error under a $1.05\times$ scale perturbation). Signal conditioning applied a 4th-order Butterworth bandpass ($5\text{–}20\text{ Hz}$) in second-order sections via zero-phase `sosfiltfilt` (scoped strictly to QRS enhancement, not diagnostic ST/P/T preservation), followed by centered differentiation $d[n]$, squaring $e[n] = d[n]^2$, $120\text{ ms}$ moving-window integration $M[n]$, dual Pan–Tompkins adaptive thresholds (`SPKI`/`NPKI` with $1.66\times\overline{RR}$ searchback and $250\text{ ms}$ refractory period), and $\pm 90\text{ ms}$ local peak relocation.
 
----
-
-## 5. Quantitative Evaluation Results
-
-Using strict **one-to-one beat matching** within a $\pm 150\text{ ms}$ tolerance window (`evaluation.py`), the five-record 30-minute pilot (`100`, `101`, `103`, `105`, `106`) demonstrated:
-
-- **Complete rejection of out-of-band sinusoidal artifacts:** Both $0.25\text{ Hz}$ baseline wander and $60\text{ Hz}$ mains interference produced **zero additional False Positives** across all 10,789 beats.
-- **Temporal jitter precedes beat-loss under broadband noise:** On clean `Record 100` ($n = 2,265$ beats), F1-score remained $100.00\%$ even at $5\text{ dB}$ SNR, yet $\text{MAE}_t$ rose monotonically from $1.50\text{ ms}$ to $1.96\text{ ms}$ ($+30\%$).
-- **Vulnerability to in-band motion artifacts & wide PVCs:**
-  - `Record 105` (high-grade motion noise) exhibited `33 FP` and `8 FN` at baseline ($\text{PPV} = 98.73\%$, $F_1 = 99.20\%$), with $\text{MAE}_t$ surging from $1.23\text{ ms}$ to **$3.56\text{ ms}$** at $5\text{ dB}$ SNR.
-  - `Record 106` ($518$ multiform PVCs) suffered a $3\times$ increase in missed beats (`2 FN` $\rightarrow$ `6 FN`) and `4 FP` at $5\text{ dB}$ SNR, with $\text{MAE}_t$ reaching **$4.27\text{ ms}$** ($> 1.5 \times \Delta t$) due to reduced high-frequency $dV/dt$ slope in wide ventricular ectopic complexes.
+### 2.3 Perturbation Protocols and Evaluation Metrics
+Each recording was evaluated under (i) synthetic baseline wander ($0.20\text{ mV}$, $0.25\text{ Hz}$), $60\text{ Hz}$ interference ($0.05\text{ mV}$), and zero-mean AWGN ($20, 10, 5\text{ dB}$ SNR referenced to $\text{Var}(x)$), and (ii) physical `nstdb` recordings (`bw`, `ma`, `em`) scaled via $\alpha = \sqrt{P_x / (P_n \cdot 10^{\text{SNR}/10})}$ from $24$ down to $-6\text{ dB}$ SNR. Strict one-to-one beat matching was swept across $\pm\{8.33, 16.67, 25, 50, 100, 150\}\text{ ms}$. Signed timing errors followed $e_i = t_{\text{det},i} - t_{\text{ref},i}$. Because the `10,789` beats evaluated across 6 conditions represent `64,734` paired repeated-measures opportunities rather than independent observations, baseline summaries were computed by pooling counts (`compute_micro_aggregated_metrics`).
 
 ---
 
-## 6. Conclusions & Portfolio Summary Post (Ready for Technical Sharing)
+## 3. Results
 
-```text
-ECG Signal Integrity: Building a Digital Verification Framework for Biomedical Signals
+1. **Pooled Baseline & Tolerance Sensitivity:** Pooled baseline performance at $\pm 150\text{ ms}$ reached `Se = 99.89%`, `PPV = 99.66%`, and `F1 = 99.77%` (`10,777 TP`, `37 FP`, `12 FN`). However, shrinking the tolerance window exposed substantial fiducial dispersion on ectopic beats: on `Record 106`, baseline F1 remained `99.95%` at $\pm 150\text{ ms}$ and $\pm 100\text{ ms}$, `99.80%` at $\pm 50\text{ ms}$, `97.38%` at $\pm 25\text{ ms}$, and dropped to **`95.79%`** (`93.96%` at $5\text{ dB}$ AWGN) at $\pm 8.33\text{ ms}$ ($\pm 3$ samples).
+2. **Temporal Jitter & HRV Propagation at Constant 100% F1:** On `Record 100` (30 min, $n=2,265$), F1 stayed at `100.00%` across all synthetic conditions, whereas ensemble $\text{MAE}_t$ rose from `1.50 ms` to `1.96 ms` ($+30.7\%$) across the $2.78\text{ ms}$ discrete sampling grid, $\sigma_t$ increased from `1.68 ms` to `2.62 ms` ($+56.0\%$), and `RMSSD` across `2,196` clean `N`–`N` sinus intervals increased from `27.80 ms` (reference) to `28.51 ms` ($+2.54\%$) at $5\text{ dB}$ SNR.
+3. **Synthetic vs. Real `NSTDB` Noise:** Stationary $0.25\text{ Hz}$ and $60\text{ Hz}$ sinusoids and physical `nstdb/bw` down to $-6\text{ dB}$ caused zero added FPs on `Record 100`. Conversely, physical EMG (`nstdb/ma`) and electrode motion (`nstdb/em`) at $-6\text{ dB}$ caused `127 FP` (`PPV = 94.68%`) and `171 FP` (`PPV = 92.97%`, $\sigma_t = 6.38\text{ ms}$), respectively.
+4. **Comparison with WFDB `XQRS`:** On `Record 100` and `Record 105`, `XQRS` achieved lower $\text{MAE}_t$ (`0.50 ms` vs. `1.50 ms` on `100`) and fewer FPs under `nstdb/em` (`34` vs. `43` at $+6\text{ dB}$ on `105`). Conversely, on `Record 106` (`518` multiform PVCs), `XQRS` missed `88` beats at baseline (`Se = 95.65%`, `F1 = 97.77%`), whereas the derivative-energy Pan–Tompkins pipeline missed only `2` (`Se = 99.90%`, `F1 = 99.95%`).
 
-How reliable is an ECG processing algorithm when the input signal is affected by electrical interference, physiological noise, and arrhythmia morphology changes?
+---
 
-I developed ECG-Integrity-Lab, an open Python framework to investigate this question quantitatively using expert-annotated recordings from PhysioNet's MIT-BIH Arrhythmia Database (360 Hz, 11-bit ADC).
+## 4. Error Analysis (`Records 105 & 106`)
 
-Across a 5-record full-duration pilot (10,789 expert-reviewed beats; 64,734 beat evaluations across 6 controlled perturbation scenarios), the framework integrates:
+- **Motion-Artifact False Positives (`Record 105`):** Waveform inspection ($\pm 300\text{ ms}$) of all `33` baseline FPs showed that `3` coincided within $3\text{–}36\text{ ms}$ of PhysioNet `|` isolated-artifact annotations, and `19` lay within $5\text{ s}$ of `~` signal-quality transitions (`raw_ptp_mv` up to `5.77 mV`), producing in-band $5\text{–}20\text{ Hz}$ energy bursts up to $27.7\times$ `THRESHOLD_I1`.
+- **Biophysical PVC Attenuation (`Record 106` at $5\text{ dB}$):** Normal `N` beats achieved `100.00%` sensitivity (`1503/1503`), whereas `6/518` multiform PVCs were missed (`Se = 98.84%`). Missed PVCs exhibited lower peak-to-peak amplitude ($1.50\text{ mV}$ vs. $2.57\text{ mV}$), $3.2\times$ lower filtered slope ($18.6\text{ mV/s}$ vs. $58.8\text{ mV/s}$), and integrated energy ratios strictly below threshold ($E_{\text{QRS}} / I_1 < 0.60$ for all `6` FNs vs. $2.89$ mean for `512` TPs).
 
-• Biomedical instrumentation & QA: Automated header verification of sampling rate, physical units (mV), ADC gain (200 counts/mV), digital baseline, and exclusion of non-beat rhythm/noise markers.
-• Software metrology: A deterministic 1.0 mV / 60 bpm digital calibration phantom (0.0% nominal scale/rate error; verified +5.0% gain-error detection) plus automated unit tests.
-• Digital signal conditioning: Zero-phase 4th-order Butterworth SOS bandpass (5–20 Hz) paired with controlled baseline wander (0.25 Hz), 60 Hz mains hum, and seeded AWGN (20, 10, and 5 dB SNR).
-• Quantitative failure analysis: Strict 1-to-1 beat matching (±150 ms) revealed zero false positives from out-of-band 0.25 Hz / 60 Hz interference, whereas broadband 5 dB noise and clinical motion/ectopic morphologies (Records 105 & 106) increased R-peak temporal localization error (MAE_t) up to 3.56–4.27 ms (>1 sample period) and tripled missed multiform PVCs.
+---
 
-This is an exploratory biomedical engineering research and software-verification project, not a clinically validated diagnostic system or medical device.
+## 5. Discussion & Limitations
 
-Repository, protocol & reproducible results: https://github.com/Pirrijean/ECG-Integrity-Lab
+These findings demonstrate that evaluating QRS detectors solely via $\pm 150\text{ ms}$ F1-scores under synthetic Gaussian/sinusoidal noise masks clinically and technically meaningful failure modes. Key limitations of the present framework include: (1) purposive 5-record pilot scope rather than full 48-record / 47-subject clustered bootstrap inference; (2) single-lead (`MLII`) offline non-causal filtering (`sosfiltfilt`); (3) non-diagnostic $5\text{–}20\text{ Hz}$ passband unsuitable for ST/morphology analysis; and (4) discrete sample-index quantization ($\Delta t = 2.78\text{ ms}$), motivating independent validation of sub-sample interpolation methods.
 
-#BiomedicalEngineering #BiomedicalInstrumentation #ECG #SignalProcessing #MedicalDevices #QualityEngineering #Python #Metrology #RAndD
-```
+---
+
+## 6. Conclusion
+
+`ECG-Integrity-Lab` establishes a reproducible methodology for characterizing both beat-detection errors and sub-tolerance temporal localization drift. Reporting tolerance-sweep curves, physical `nstdb` stress tests, morphology-stratified metrics, and NN-interval `RMSSD` sensitivity provides a far more rigorous engineering assessment than single-threshold classification accuracy alone.
